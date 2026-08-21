@@ -738,7 +738,7 @@ def handle_update(update: dict[str, Any], cfg: dict[str, Any]) -> None:
 
 
 def process_auto_like() -> None:
-    if not db or not db_connected or state is None:
+    if db is None or not db_connected or state is None:
         return
     cfg = config()
     if not cfg:
