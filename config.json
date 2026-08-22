@@ -1,0 +1,8 @@
+{
+  "api_id": 123456,
+  "api_hash": "YOUR_API_HASH",
+  "bot_token": "8860920312:AAEEv3PS5hYoCGocda4GrtncJgPJeOWKVr4",
+  "admin_id": 8466278245,
+  "mongodb_uri": "mongodb+srv://kingcrp8_db_user:iIpNOHkOvZZUIVLz@ff-bot.mwqcmx1.mongodb.net/?appName=ff-bot",
+  "database_name": "ff-bot"
+}
