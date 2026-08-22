@@ -768,6 +768,7 @@ def database_retry_loop() -> None:
         try:
             connect_database()
             print("DATABASE SUCCESSFULLY CONNECTED", flush=True)
+            start_runtime_threads()
         except Exception as exc:
             startup_error = str(exc)
             log.error("DATABASE CONNECTION FAILED: %s", exc)
@@ -779,6 +780,66 @@ def process_webhook_update(update: dict[str, Any], cfg: dict[str, Any]) -> None:
         handle_update(update, cfg)
     except Exception:
         log.exception("webhook update processing failed")
+
+
+def polling_loop() -> None:
+    """Receive Telegram updates with long polling instead of webhooks."""
+    offset: int | None = None
+    while True:
+        if not db_connected or state is None:
+            time.sleep(5)
+            continue
+        cfg = config()
+        if not cfg:
+            log.error("polling paused: config.json is missing or invalid")
+            time.sleep(30)
+            continue
+        try:
+            params: dict[str, Any] = {
+                "timeout": 25,
+                "allowed_updates": json.dumps(["message", "callback_query"]),
+            }
+            if offset is not None:
+                params["offset"] = offset
+            result = requests.post(
+                f"https://api.telegram.org/bot{cfg['bot_token']}/getUpdates",
+                data=params,
+                timeout=35,
+            ).json()
+            if not isinstance(result, dict) or not result.get("ok"):
+                log.error("telegram polling failed: %s", result)
+                time.sleep(5)
+                continue
+            updates = result.get("result", [])
+            if not isinstance(updates, list):
+                continue
+            for update in updates:
+                if not isinstance(update, dict):
+                    continue
+                update_id = int_value(update.get("update_id"), -1)
+                if update_id >= 0:
+                    offset = update_id + 1
+                    if state.processed.find_one({"_id": str(update_id)}):
+                        continue
+                    state.processed.update_one(
+                        {"_id": str(update_id)},
+                        {"$set": {"processed_at": time.time()}},
+                        upsert=True,
+                    )
+                threading.Thread(
+                    target=process_webhook_update,
+                    args=(update, cfg),
+                    daemon=True,
+                    name=f"telegram-update-{update_id}",
+                ).start()
+        except (requests.RequestException, ValueError) as exc:
+            log.error("telegram polling connection failed: %s", exc)
+            time.sleep(5)
+
+
+def start_runtime_threads() -> None:
+    threading.Thread(target=scheduler, daemon=True, name="autolike-scheduler").start()
+    threading.Thread(target=polling_loop, daemon=True, name="telegram-polling").start()
 
 
 @app.route("/health", methods=["GET"])
@@ -797,27 +858,8 @@ def health() -> Any:
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook() -> Any:
     if request.method == "GET":
-        return jsonify({"status": "ok", "service": "ff-bot2", "database": db_connected})
-    if not db_connected or state is None:
-        return jsonify({"ok": False, "error": "Database is not connected yet"}), 503
-    cfg = config()
-    if cfg:
-        update = request.get_json(silent=True)
-        if isinstance(update, dict):
-            update_id = int_value(update.get("update_id"), -1)
-            if update_id >= 0 and state.processed.find_one({"_id": str(update_id)}):
-                return jsonify({"ok": True})
-            if update_id >= 0:
-                state.processed.update_one({"_id": str(update_id)}, {"$set": {"processed_at": time.time()}}, upsert=True)
-            # Telegram expects a fast 2xx response. Commands can call several
-            # third-party APIs, so process them after acknowledging the update.
-            threading.Thread(
-                target=process_webhook_update,
-                args=(update, cfg),
-                daemon=True,
-                name=f"telegram-update-{update_id}",
-            ).start()
-    return jsonify({"ok": True})
+        return jsonify({"status": "ok", "service": "ff-bot2", "mode": "polling", "database": db_connected})
+    return jsonify({"ok": False, "error": "Webhook mode is disabled; bot is running in polling mode"}), 405
 
 
 def startup() -> None:
@@ -832,7 +874,10 @@ def startup() -> None:
         print(f"DATABASE CONNECTION FAILED: {exc}", flush=True)
         threading.Thread(target=database_retry_loop, daemon=True, name="database-retry").start()
         return
-    threading.Thread(target=scheduler, daemon=True, name="autolike-scheduler").start()
+    cfg = config()
+    if cfg:
+        tg(cfg["bot_token"], "deleteWebhook", drop_pending_updates=False)
+    start_runtime_threads()
 
 
 startup()
