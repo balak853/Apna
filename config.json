@@ -1,7 +1,0 @@
-{
-    "bot_token": "8860920312:AAGKQXDXyf9lt_RhTsV8aJjmzS5MKJaEn8g",
-    "owner_user_id": 8466278245,
-    "info_api": "https://player-info-ob54.vercel.app/player-info?uid=",
-    "bot_enabled": true,
-    "api_mode": 1
-}
