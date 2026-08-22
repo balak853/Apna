@@ -6,6 +6,7 @@ import logging
 import math
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -57,9 +58,39 @@ def load_config() -> dict[str, Any]:
     if missing:
         status_print("CONFIGURATION MISSING")
         raise ValueError(f"Missing configuration fields: {', '.join(missing)}")
-    if str(config["bot_token"]).strip() == "YOUR_BOT_TOKEN":
+
+    try:
+        api_id = int(config["api_id"])
+        admin_id = int(config["admin_id"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("api_id and admin_id must be numeric") from error
+
+    api_hash = str(config["api_hash"]).strip()
+    bot_token = str(config["bot_token"]).strip()
+    mongodb_uri = str(config["mongodb_uri"]).strip()
+    database_name = str(config["database_name"]).strip()
+    if api_id <= 0 or not api_hash:
+        raise ValueError("A valid api_id and api_hash are required")
+    if admin_id <= 0:
+        raise ValueError("A valid admin_id is required")
+    if not bot_token or bot_token == "YOUR_BOT_TOKEN":
         status_print("BOT TOKEN MISSING")
-        raise ValueError("Replace YOUR_BOT_TOKEN in config.json before starting")
+        raise ValueError("A valid bot token is required in config.json")
+    if not mongodb_uri or not database_name:
+        raise ValueError("A valid MongoDB URI and database name are required")
+
+    # Keep all runtime credentials sourced from config.json, normalized once,
+    # and never included in logs or exception messages.
+    config.update(
+        {
+            "api_id": api_id,
+            "api_hash": api_hash,
+            "bot_token": bot_token,
+            "admin_id": admin_id,
+            "mongodb_uri": mongodb_uri,
+            "database_name": database_name,
+        }
+    )
     return config
 
 
@@ -934,9 +965,10 @@ def start_health_server() -> None:
 
 bot = Client(
     "ff-bot2",
-    api_id=int(CONFIG["api_id"]),
-    api_hash=str(CONFIG["api_hash"]),
-    bot_token=str(CONFIG["bot_token"]),
+    workdir=str(BASE_DIR),
+    api_id=CONFIG["api_id"],
+    api_hash=CONFIG["api_hash"],
+    bot_token=CONFIG["bot_token"],
 )
 
 
@@ -1112,11 +1144,41 @@ def main() -> None:
     start_health_server()
     start_daily_reset_worker()
     status_print("BOT SUCCESSFULLY STARTED")
-    logger.info("Starting persistent Pyrogram client")
     try:
-        bot.run()
+        run_persistent_bot()
     finally:
         status_print("BOT STOPPED")
+
+
+def run_persistent_bot() -> None:
+    """Keep the long-polling Pyrogram client alive after transient failures."""
+    reconnect_delay = 5
+    while True:
+        try:
+            status_print("PYROGRAM CONNECTION STARTING")
+            bot.run()
+            status_print("PYROGRAM CONNECTION ENDED")
+            return
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as error:
+            # Log only the exception type so Telegram credentials can never
+            # accidentally appear in a traceback or error string.
+            logger.warning(
+                "Pyrogram connection ended with %s; reconnecting in %s seconds",
+                type(error).__name__,
+                reconnect_delay,
+            )
+            status_print("TELEGRAM CONNECTION LOST; RETRYING")
+            try:
+                bot.stop()
+            except Exception as stop_error:
+                logger.warning(
+                    "Pyrogram cleanup returned %s",
+                    type(stop_error).__name__,
+                )
+            time.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, 60)
 
 
 if __name__ == "__main__":
