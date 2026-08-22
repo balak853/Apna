@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import re
 import threading
 import time
@@ -953,7 +954,7 @@ def start_health_server() -> None:
     threading.Thread(
         target=lambda: health_app.run(
             host="0.0.0.0",
-            port=8000,
+            port=int(os.environ.get("PORT", "8000")),
             debug=False,
             use_reloader=False,
         ),
