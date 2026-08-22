@@ -773,6 +773,14 @@ def database_retry_loop() -> None:
             log.error("DATABASE CONNECTION FAILED: %s", exc)
 
 
+def process_webhook_update(update: dict[str, Any], cfg: dict[str, Any]) -> None:
+    """Process Telegram work outside the webhook request."""
+    try:
+        handle_update(update, cfg)
+    except Exception:
+        log.exception("webhook update processing failed")
+
+
 @app.route("/health", methods=["GET"])
 @app.route("/healthz", methods=["GET"])
 def health() -> Any:
@@ -801,7 +809,14 @@ def webhook() -> Any:
                 return jsonify({"ok": True})
             if update_id >= 0:
                 state.processed.update_one({"_id": str(update_id)}, {"$set": {"processed_at": time.time()}}, upsert=True)
-            handle_update(update, cfg)
+            # Telegram expects a fast 2xx response. Commands can call several
+            # third-party APIs, so process them after acknowledging the update.
+            threading.Thread(
+                target=process_webhook_update,
+                args=(update, cfg),
+                daemon=True,
+                name=f"telegram-update-{update_id}",
+            ).start()
     return jsonify({"ok": True})
 
 
