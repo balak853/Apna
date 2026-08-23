@@ -324,6 +324,10 @@ def register_user_sync(user: Any) -> tuple[bool, dict[str, Any] | None]:
         return False, None
 
 
+def list_users_sync() -> list[dict[str, Any]]:
+    return list(users.find({}).sort("user_id", ASCENDING))
+
+
 async def register_user(user: Any, notify_admin: bool = True) -> dict[str, Any] | None:
     first_registration, document = await asyncio.to_thread(register_user_sync, user)
     if document is None:
@@ -1592,6 +1596,71 @@ async def start_command(_: Client, message: Message) -> None:
             "⚠️ Sᴏᴍᴇᴛʜɪɴɢ Wᴇɴᴛ Wʀᴏɴɢ.\nPʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ.",
             quote=True,
         )
+
+
+@bot.on_message(filters.command("users", case_sensitive=False))
+async def users_command(_: Client, message: Message) -> None:
+    export_path: Path | None = None
+    processing: Message | None = None
+    try:
+        status_print("COMMAND RECEIVED: /users")
+        if message.from_user is None or int(message.from_user.id) != int(
+            CONFIG["admin_id"]
+        ):
+            return
+
+        processing = await message.reply_text(
+            "⏳ Preparing the users database document...",
+            quote=True,
+        )
+        documents = await asyncio.to_thread(list_users_sync)
+        downloads_dir = BASE_DIR / "Downloads"
+        downloads_dir.mkdir(exist_ok=True)
+        export_path = downloads_dir / f"users_{int(time.time())}.json"
+        export_path.write_text(
+            json.dumps(documents, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+
+        try:
+            await processing.delete()
+        except Exception:
+            logger.warning("Could not delete users export processing message")
+        processing = None
+
+        await message.reply_document(
+            str(export_path),
+            caption=f"✅ Users database export\n📄 Documents: {len(documents)}",
+            quote=True,
+        )
+    except PyMongoError:
+        logger.exception("Users export database query failed")
+        if processing is not None:
+            try:
+                await processing.delete()
+            except Exception:
+                pass
+        await message.reply_text(
+            "⚠️ Could not read the users database right now.",
+            quote=True,
+        )
+    except Exception:
+        logger.exception("Users export command failed")
+        if processing is not None:
+            try:
+                await processing.delete()
+            except Exception:
+                pass
+        await message.reply_text(
+            "⚠️ Could not create the users database document.",
+            quote=True,
+        )
+    finally:
+        if export_path is not None:
+            try:
+                export_path.unlink(missing_ok=True)
+            except Exception:
+                logger.warning("Could not remove temporary users export file")
 
 
 @bot.on_message(filters.command("like"))
