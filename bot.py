@@ -180,6 +180,7 @@ users: Collection = database["users"]
 groups: Collection = database["groups"]
 apis: Collection = database["apis"]
 autolike: Collection = database["autolike"]
+force_join: Collection = database["force_join"]
 
 
 def utc_now() -> datetime:
@@ -211,6 +212,11 @@ def initialize_database() -> None:
             [("chat_id", ASCENDING)],
             unique=True,
             name="groups_chat_id_unique",
+        )
+        force_join.create_index(
+            [("chat_id", ASCENDING)],
+            unique=True,
+            name="force_join_chat_id_unique",
         )
         autolike.create_index(
             [("uid", ASCENDING), ("region", ASCENDING)],
@@ -449,6 +455,166 @@ async def sync_group(message: Message) -> bool:
             quote=True,
         )
         return False
+
+
+
+def is_configured_admin(user_id: int | None) -> bool:
+    return user_id is not None and int(user_id) == int(CONFIG["admin_id"])
+
+
+def is_private_chat(message: Message) -> bool:
+    chat_type = getattr(getattr(message, "chat", None), "type", None)
+    return chat_type == ChatType.PRIVATE or str(chat_type).lower() in {"private", "chattype.private"}
+
+
+def force_join_link(document: dict[str, Any]) -> str | None:
+    link = str(document.get("invite_link") or "").strip()
+    return link if link.startswith(("http://", "https://", "tg://")) else None
+
+
+def force_join_keyboard(documents: list[dict[str, Any]]) -> InlineKeyboardMarkup | None:
+    rows: list[list[InlineKeyboardButton]] = []
+    for document in documents:
+        link = force_join_link(document)
+        if link:
+            rows.append([InlineKeyboardButton("🔗 Jᴏɪɴ Nᴏᴡ", url=link)])
+    if not rows:
+        return None
+    rows.append([InlineKeyboardButton("✅ Cʜᴇᴄᴋ", callback_data="force_join_check")])
+    return InlineKeyboardMarkup(rows)
+
+
+def force_join_prompt(documents: list[dict[str, Any]]) -> str:
+    lines = [
+        "<pre>╭━━━━━━━━━━━━━━━━━━━━━━━╮",
+        "│  🔒 Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ",
+        "╰━━━━━━━━━━━━━━━━━━━━━━━╯",
+        "",
+        "Yᴏᴜ Mᴜsᴛ Jᴏɪɴ Oᴜʀ Cʜᴀɴɴᴇʟ/Gʀᴏᴜᴘ Bᴇғᴏʀᴇ Uѕɪɴɢ Tʜɪѕ Cᴏᴍᴍᴀɴᴅ.",
+        "",
+    ]
+    for document in documents:
+        title = html.escape(str(document.get("title") or "Rᴇǫᴜɪʀᴇᴅ Cʜᴀᴛ"), quote=True)
+        lines.append(f"📢 {title} — Jᴏɪɴ Nᴏᴡ")
+    lines.append("</pre>")
+    return "\n".join(lines)
+
+
+async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]]:
+    try:
+        documents = await asyncio.to_thread(lambda: list(force_join.find({})))
+    except PyMongoError:
+        logger.exception("Force-join collection read failed")
+        return []
+    missing: list[dict[str, Any]] = []
+    for document in documents:
+        chat_id = document.get("chat_id")
+        if chat_id in (None, ""):
+            continue
+        try:
+            member = await bot.get_chat_member(int(chat_id), user_id)
+            status = getattr(member, "status", None)
+            status_text = str(status).lower()
+            allowed = status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER} or status_text in {
+                "owner", "creator", "administrator", "member", "chattype.member"
+            }
+            if not allowed:
+                missing.append(document)
+        except Exception:
+            logger.warning("Force-join membership check skipped for chat %s", chat_id)
+    return missing
+
+
+async def command_access_allowed(message: Message) -> bool:
+    user_id = getattr(getattr(message, "from_user", None), "id", None)
+    if is_configured_admin(user_id):
+        return True
+    if is_private_chat(message):
+        await message.reply_text(
+            "<pre>🚫 Aᴄᴄᴇss Dᴇɴɪᴇᴅ!\n\nTʜɪs Cᴏᴍᴍᴀɴᴅ Iѕ Oɴʟʏ Aᴠᴀɪʟᴀʙʟᴇ Iɴ Gʀᴏᴜᴘs Fᴏʀ Rᴇɢᴜʟᴀʀ Uѕᴇʀѕ.</pre>",
+            parse_mode=ParseMode.HTML, quote=True,
+        )
+        return False
+    if user_id is None:
+        return False
+    missing = await missing_force_join_chats(int(user_id))
+    if not missing:
+        return True
+    await message.reply_text(
+        force_join_prompt(missing),
+        parse_mode=ParseMode.HTML,
+        reply_markup=force_join_keyboard(missing),
+        quote=True,
+    )
+    return False
+
+
+async def verify_force_join_callback(callback_query: CallbackQuery) -> None:
+    message = callback_query.message
+    user = callback_query.from_user
+    if message is None or user is None:
+        return
+    missing = await missing_force_join_chats(int(user.id))
+    if missing:
+        await callback_query.answer("⚠️ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ!", show_alert=True)
+        await message.edit_text(force_join_prompt(missing), parse_mode=ParseMode.HTML, reply_markup=force_join_keyboard(missing))
+        return
+    await callback_query.answer("✅ Vᴇʀɪғɪᴇᴅ!")
+    await message.edit_text(
+        "<pre>✅ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Sᴜᴄᴄᴇssғᴜʟ!\n\nYᴏᴜ Cᴀɴ Nᴏᴡ Sᴇɴᴅ Yᴏᴜʀ Cᴏᴍᴍᴀɴᴅs.</pre>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+def force_chat_type(chat: Any) -> str | None:
+    chat_type = getattr(chat, "type", None)
+    value = str(chat_type).lower()
+    if chat_type == ChatType.CHANNEL or value in {"channel", "chattype.channel"}:
+        return "CHANNEL"
+    if chat_type == ChatType.GROUP or value in {"group", "chattype.group"}:
+        return "GROUP"
+    if chat_type == ChatType.SUPERGROUP or value in {"supergroup", "chattype.supergroup"}:
+        return "SUPERGROUP"
+    return None
+
+
+async def force_chat_invite_link(chat: Any, chat_id: int) -> str | None:
+    username = str(getattr(chat, "username", "") or "").strip().lstrip("@")
+    if username:
+        return f"https://t.me/{username}"
+    existing = str(getattr(chat, "invite_link", "") or "").strip()
+    if existing:
+        return existing
+    try:
+        return await bot.export_chat_invite_link(chat_id)
+    except Exception:
+        logger.warning("Could not export invite link for force-join chat %s", chat_id)
+        return None
+
+
+async def make_force_admin_help(callback_query: CallbackQuery) -> None:
+    message = callback_query.message
+    if message is None:
+        return
+    try:
+        chat_id = int((callback_query.data or "").split(":", 1)[1])
+        chat = await bot.get_chat(chat_id)
+    except (IndexError, TypeError, ValueError):
+        await callback_query.answer("⚠️ Iɴᴠᴀʟɪᴅ Cʜᴀᴛ.", show_alert=True)
+        return
+    except Exception:
+        await callback_query.answer("⚠️ Cʜᴀᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Fᴏᴜɴᴅ.", show_alert=True)
+        return
+    buttons = []
+    username = str(getattr(chat, "username", "") or "").strip().lstrip("@")
+    if username:
+        buttons.append([InlineKeyboardButton("📢 Oᴘᴇɴ Cʜᴀᴛ", url=f"https://t.me/{username}")])
+    await callback_query.answer()
+    await message.edit_text(
+        "<pre>👑 Mᴀᴋᴇ Mᴇ Aᴅᴍɪɴ\n\nTelegram Bot API bot ko bina human admin action ke administrator nahi bana sakti.\n\nCʜᴀᴛ Oᴘᴇɴ Kᴀʀᴇɪɴ, Bᴏᴛ Kᴏ Jᴏɪɴ Kᴀʀᴇɪɴ, Pʜɪʀ Bᴏᴛ Kᴏ Aᴅᴍɪɴ Pʀᴏᴍᴏᴛᴇ Kᴀʀᴇɪɴ.\n\nUske baad /addforce command dobara run karein.</pre>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons) if buttons else None,
+    )
 
 
 def command_arguments(message: Message) -> list[str]:
@@ -1678,11 +1844,92 @@ async def register_every_interaction(_: Client, message: Message) -> None:
         logger.exception("Interaction registration handler failed")
 
 
+@bot.on_message(filters.command("addforce", case_sensitive=False))
+async def add_force_command(_: Client, message: Message) -> None:
+    try:
+        status_print("COMMAND RECEIVED: /addforce")
+        if not is_configured_admin(getattr(message.from_user, "id", None)):
+            return
+        arguments = command_arguments(message)
+        if len(arguments) != 1:
+            await message.reply_text("<pre>▸ Uѕᴀɢᴇ: /addforce &lt;chat_id&gt;\n\nEхᴀᴍᴘʟᴇ: /addforce -1001234567890</pre>", parse_mode=ParseMode.HTML, quote=True)
+            return
+        try:
+            chat_id = int(arguments[0])
+        except ValueError:
+            await message.reply_text("<pre>⚠️ Iɴᴠᴀʟɪᴅ Cʜᴀᴛ Iᴅ.</pre>", parse_mode=ParseMode.HTML, quote=True)
+            return
+        try:
+            chat = await bot.get_chat(chat_id)
+        except Exception:
+            await message.reply_text("<pre>⚠️ Cʜᴀᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Fᴏᴜɴᴅ Oʀ Iѕ Nᴏᴛ Aᴄᴄᴇssɪʙʟᴇ Bʏ Tʜᴇ Bᴏᴛ.</pre>", parse_mode=ParseMode.HTML, quote=True)
+            return
+        chat_type = force_chat_type(chat)
+        if chat_type is None:
+            await message.reply_text("<pre>⚠️ Oɴʟʏ CHANNEL, GROUP, ᴏʀ SUPERGROUP Cʜᴀᴛs Aʀᴇ Sᴜᴘᴘᴏʀᴛᴇᴅ.</pre>", parse_mode=ParseMode.HTML, quote=True)
+            return
+        try:
+            bot_member = await bot.get_chat_member(chat_id, "me")
+            status = getattr(bot_member, "status", None)
+            bot_is_admin = status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR} or str(status).lower() in {"owner", "creator", "administrator", "chattype.administrator"}
+        except Exception:
+            bot_is_admin = False
+        title = str(getattr(chat, "title", None) or getattr(chat, "username", None) or chat_id)
+        if not bot_is_admin:
+            username = str(getattr(chat, "username", "") or "").strip().lstrip("@")
+            buttons = [[InlineKeyboardButton("👑 Mᴀᴋᴇ Mᴇ Aᴅᴍɪɴ", callback_data=f"force_admin:{chat_id}")]]
+            if username:
+                buttons.insert(0, [InlineKeyboardButton("📢 Oᴘᴇɴ Cʜᴀᴛ", url=f"https://t.me/{username}")])
+            await message.reply_text(
+                "<pre>╭━━━━━━━━━━━━━━━━━━━━━━━╮\n│  ⚠️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Nᴏᴛ Aᴅᴅᴇᴅ\n╰━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
+                f"├─ 📢 Tʏᴘᴇ : {html.escape(chat_type)}\n├─ 🆔 Cʜᴀᴛ Iᴅ : {chat_id}\n├─ 👑 Aᴅᴍɪɴ : Nᴏ\n└─ 🔗 Lɪɴᴋ : Nᴏᴛ Aᴠᴀɪʟᴀʙʟᴇ</pre>",
+                parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons), quote=True,
+            )
+            return
+        invite_link = await force_chat_invite_link(chat, chat_id)
+        if not invite_link:
+            await message.reply_text("<pre>⚠️ Bᴏᴛ Aᴅᴍɪɴ Hᴀɪ, Lᴇᴋɪɴ Vᴀʟɪᴅ Iɴᴠɪᴛᴇ Lɪɴᴋ Nᴀʜɪ Mɪʟ Sᴀᴋᴀ.</pre>", parse_mode=ParseMode.HTML, quote=True)
+            return
+        document = {"chat_id": chat_id, "chat_type": chat_type, "title": title, "invite_link": invite_link, "added_by": int(message.from_user.id), "bot_is_admin": True, "created_at": utc_now()}
+        await asyncio.to_thread(force_join.update_one, {"chat_id": chat_id}, {"$set": document}, upsert=True)
+        await message.reply_text(
+            "<pre>╭━━━━━━━━━━━━━━━━━━━━━━━╮\n│  ✅ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Aᴅᴅᴇᴅ\n╰━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
+            f"├─ 📢 Tʏᴘᴇ : {html.escape(chat_type)}\n├─ 🆔 Cʜᴀᴛ Iᴅ : {chat_id}\n├─ 👑 Aᴅᴍɪɴ : Yᴇs\n└─ 🔗 Lɪɴᴋ : {html.escape(invite_link, quote=True)}</pre>",
+            parse_mode=ParseMode.HTML, quote=True,
+        )
+    except PyMongoError:
+        logger.exception("Force-join database update failed")
+        await message.reply_text("<pre>⚠️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Sᴀᴠᴇ Fᴀɪʟᴇᴅ.</pre>", parse_mode=ParseMode.HTML, quote=True)
+    except Exception:
+        logger.exception("addforce command failed")
+        await message.reply_text("<pre>⚠️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ.</pre>", parse_mode=ParseMode.HTML, quote=True)
+
+
+@bot.on_callback_query(filters.regex(r"^force_join_check$"))
+async def force_join_check_callback(_: Client, callback_query: CallbackQuery) -> None:
+    try:
+        await verify_force_join_callback(callback_query)
+    except Exception:
+        logger.exception("Force-join verification callback failed")
+        await callback_query.answer("⚠️ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ!", show_alert=True)
+
+
+@bot.on_callback_query(filters.regex(r"^force_admin:-?[0-9]+$"))
+async def force_admin_callback(_: Client, callback_query: CallbackQuery) -> None:
+    try:
+        await make_force_admin_help(callback_query)
+    except Exception:
+        logger.exception("Force-join admin help callback failed")
+        await callback_query.answer("⚠️ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ.", show_alert=True)
+
+
 @bot.on_message(filters.command("get", case_sensitive=False))
 async def get_uid_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
         status_print("COMMAND RECEIVED: /get")
+        if not await command_access_allowed(message):
+            return
         arguments = command_arguments(message)
         if len(arguments) != 1 or not UID_PATTERN.fullmatch(arguments[0]):
             await message.reply_text(
@@ -1896,6 +2143,8 @@ async def like_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
         status_print("COMMAND RECEIVED: /like")
+        if not await command_access_allowed(message):
+            return
         if message.from_user is None:
             return
         document = await register_user(message.from_user)
