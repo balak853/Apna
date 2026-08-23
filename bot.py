@@ -500,12 +500,12 @@ def force_join_prompt(documents: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]]:
+async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
     try:
         documents = await asyncio.to_thread(lambda: list(force_join.find({})))
     except PyMongoError:
         logger.exception("Force-join collection read failed")
-        return []
+        return None
     missing: list[dict[str, Any]] = []
     for document in documents:
         chat_id = document.get("chat_id")
@@ -538,6 +538,12 @@ async def command_access_allowed(message: Message) -> bool:
     if user_id is None:
         return False
     missing = await missing_force_join_chats(int(user_id))
+    if missing is None:
+        await message.reply_text(
+            "<pre>⚠️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Tᴇᴍᴘᴏʀᴀʀɪʟʏ Uɴᴀᴠᴀɪʟᴀʙʟᴇ.\nPʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Sʜᴏʀᴛʟʏ.</pre>",
+            parse_mode=ParseMode.HTML, quote=True,
+        )
+        return False
     if not missing:
         return True
     await message.reply_text(
@@ -555,6 +561,9 @@ async def verify_force_join_callback(callback_query: CallbackQuery) -> None:
     if message is None or user is None:
         return
     missing = await missing_force_join_chats(int(user.id))
+    if missing is None:
+        await callback_query.answer("⚠️ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Tᴇᴍᴘᴏʀᴀʀɪʟʏ Uɴᴀᴠᴀɪʟᴀʙʟᴇ.", show_alert=True)
+        return
     if missing:
         await callback_query.answer("⚠️ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ!", show_alert=True)
         await message.edit_text(force_join_prompt(missing), parse_mode=ParseMode.HTML, reply_markup=force_join_keyboard(missing))
