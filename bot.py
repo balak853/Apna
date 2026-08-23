@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import io
 import json
 import logging
 import math
@@ -1328,6 +1329,26 @@ async def fetch_image_bytes(url: str) -> bytes | None:
     return None
 
 
+def make_named_file(content: bytes, filename: str) -> io.BytesIO:
+    file_object = io.BytesIO(content)
+    file_object.name = filename
+    return file_object
+
+
+def make_sticker_file(image_bytes: bytes) -> io.BytesIO:
+    # Telegram stickers must be sent as a sticker-compatible WEBP file.
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        sticker = image.convert("RGBA")
+        sticker.thumbnail((512, 512), Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        sticker.save(output, format="WEBP", lossless=True, method=6)
+    output.name = "profile-banner.webp"
+    output.seek(0)
+    return output
+
+
 def build_profile_output(uid: str, payloads: list[Any]) -> str:
     def value(*aliases: str) -> str:
         return html_profile_text(profile_value(payloads, set(aliases)))
@@ -1407,19 +1428,27 @@ async def send_profile_media(message: Message, uid: str) -> list[str]:
                 "⚠️ Primary and fallback banner APIs are unavailable."
             )
     if banner is not None:
+        sticker_file = None
         try:
-            await message.reply_sticker(banner, quote=True)
+            sticker_file = make_sticker_file(banner)
+            await message.reply_sticker(sticker_file, quote=True)
         except Exception:
             logger.exception("Could not send profile banner sticker")
             warnings.append("⚠️ Banner could not be sent by Telegram.")
+        finally:
+            if sticker_file is not None:
+                sticker_file.close()
 
     outfit = await fetch_image_bytes(OUTFIT_API_URL.format(uid=uid))
     if outfit is not None:
+        outfit_file = make_named_file(outfit, "profile-outfit.png")
         try:
-            await message.reply_photo(outfit, quote=True)
+            await message.reply_photo(outfit_file, quote=True)
         except Exception:
             logger.exception("Could not send profile outfit photo")
             warnings.append("⚠️ Outfit image could not be sent by Telegram.")
+        finally:
+            outfit_file.close()
     else:
         warnings.append("⚠️ Outfit image API is unavailable.")
     return warnings
