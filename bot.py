@@ -529,12 +529,6 @@ async def command_access_allowed(message: Message) -> bool:
     user_id = getattr(getattr(message, "from_user", None), "id", None)
     if is_configured_admin(user_id):
         return True
-    if is_private_chat(message):
-        await message.reply_text(
-            "<pre>🚫 Aᴄᴄᴇss Dᴇɴɪᴇᴅ!\n\nTʜɪs Cᴏᴍᴍᴀɴᴅ Iѕ Oɴʟʏ Aᴠᴀɪʟᴀʙʟᴇ Iɴ Gʀᴏᴜᴘs Fᴏʀ Rᴇɢᴜʟᴀʀ Uѕᴇʀѕ.</pre>",
-            parse_mode=ParseMode.HTML, quote=True,
-        )
-        return False
     if user_id is None:
         return False
     missing = await missing_force_join_chats(int(user_id))
@@ -544,15 +538,21 @@ async def command_access_allowed(message: Message) -> bool:
             parse_mode=ParseMode.HTML, quote=True,
         )
         return False
-    if not missing:
-        return True
-    await message.reply_text(
-        force_join_prompt(missing),
-        parse_mode=ParseMode.HTML,
-        reply_markup=force_join_keyboard(missing),
-        quote=True,
-    )
-    return False
+    if missing:
+        await message.reply_text(
+            force_join_prompt(missing),
+            parse_mode=ParseMode.HTML,
+            reply_markup=force_join_keyboard(missing),
+            quote=True,
+        )
+        return False
+    if is_private_chat(message):
+        await message.reply_text(
+            "<pre>🚫 Aᴄᴄᴇss Dᴇɴɪᴇᴅ!\n\nTʜɪs Cᴏᴍᴍᴀɴᴅ Iѕ Oɴʟʏ Aᴠᴀɪʟᴀʙʟᴇ Iɴ Gʀᴏᴜᴘs Fᴏʀ Rᴇɢᴜʟᴀʀ Uѕᴇʀѕ.</pre>",
+            parse_mode=ParseMode.HTML, quote=True,
+        )
+        return False
+    return True
 
 
 async def verify_force_join_callback(callback_query: CallbackQuery) -> None:
