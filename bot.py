@@ -1375,6 +1375,15 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
     def value(*aliases: str) -> str:
         return html_profile_text(profile_value(payloads, set(aliases)))
 
+    def nested_value(container_aliases: set[str], field_aliases: set[str]) -> str:
+        for payload in payloads:
+            container = find_value(payload, container_aliases)
+            if isinstance(container, dict):
+                result = find_value(container, field_aliases)
+                if result not in (None, ""):
+                    return html_profile_text(result)
+        return html_profile_text(None)
+
     resolved_uid = profile_value(
         payloads,
         {"uid", "playeruid", "playerid", "userid"},
@@ -1412,10 +1421,10 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
         f"├─ 👥 Members       : {value('members', 'guildmembers', 'membercount', 'membernum')}\n"
         f"└─ 👑 Captain       : {value('captain', 'guildcaptain', 'leader', 'captainid')}\n\n"
         "┌─ 🐾 PET INFORMATION\n"
-        f"├─ 🐾 Pet           : {value('pet', 'petname', 'petid')}\n"
-        f"├─ ⭐ Level         : {value('petlevel', 'pet_level', 'petlevelvalue')}\n"
-        f"├─ ✨ EXP           : {value('petexp', 'pet_exp', 'petexperience')}\n"
-        f"└─ ⚡ Status        : {value('petstatus', 'pet_status', 'isselected')}\n\n"
+        f"├─ 🐾 Pet           : {nested_value({"petinfo"}, {"id"})}\n"
+        f"├─ ⭐ Level         : {nested_value({"petinfo"}, {"level"})}\n"
+        f"├─ ✨ EXP           : {nested_value({"petinfo"}, {"exp"})}\n"
+        f"└─ ⚡ Status        : {nested_value({"petinfo"}, {"isselected"})}\n\n"
         "┌─ ⚡ LOADOUT\n"
         f"├─ ⚡ Skills        : {value('skills', 'skill', 'equippedskills', 'equipedskills')}\n"
         f"├─ 👕 Outfit        : {value('outfit', 'outfits', 'clothes')}\n"
