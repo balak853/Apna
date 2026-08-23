@@ -1422,32 +1422,34 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
 
 
 async def send_profile_media(message: Message, uid: str) -> list[str]:
-    warnings: list[str] = []
-    banner = await fetch_image_bytes(BANNER_API_URL)
-    if banner is None:
-        banner = await fetch_image_bytes(FALLBACK_BANNER_API_URL.format(uid=uid))
-        if banner is not None:
-            warnings.append(
-                "⚠️ Primary banner API unavailable — fallback banner API used."
-            )
-        else:
-            warnings.append(
-                "⚠️ Primary and fallback banner APIs are unavailable."
-            )
-    if banner is not None:
+    async def send_banner_from_url(url: str, source: str) -> bool:
+        banner = await fetch_image_bytes(url)
+        if banner is None:
+            logger.info("%s banner download failed", source)
+            return False
+
         sticker_file = None
         try:
             sticker_file = make_sticker_file(banner)
             await message.reply_sticker(sticker_file, quote=True)
+            return True
         except Exception:
-            logger.exception("Could not send profile banner sticker")
-            warnings.append("⚠️ Banner could not be sent by Telegram.")
+            logger.exception("%s banner conversion or Telegram send failed", source)
+            return False
         finally:
             if sticker_file is not None:
                 try:
                     Path(sticker_file).unlink(missing_ok=True)
                 except OSError:
-                    logger.warning("Could not remove temporary banner file")
+                    logger.warning("Could not remove temporary %s banner file", source)
+
+    primary_banner_sent = await send_banner_from_url(BANNER_API_URL, "Primary")
+    if not primary_banner_sent:
+        logger.info("Primary banner failed, using fallback")
+        await send_banner_from_url(
+            FALLBACK_BANNER_API_URL.format(uid=uid),
+            "Fallback",
+        )
 
     outfit = await fetch_image_bytes(OUTFIT_API_URL.format(uid=uid))
     if outfit is not None:
@@ -1457,7 +1459,6 @@ async def send_profile_media(message: Message, uid: str) -> list[str]:
             await message.reply_photo(outfit_file, quote=True)
         except Exception:
             logger.exception("Could not send profile outfit photo")
-            warnings.append("⚠️ Outfit image could not be sent by Telegram.")
         finally:
             if outfit_file is not None:
                 try:
@@ -1465,9 +1466,8 @@ async def send_profile_media(message: Message, uid: str) -> list[str]:
                 except OSError:
                     logger.warning("Could not remove temporary outfit file")
     else:
-        warnings.append("⚠️ Outfit image API is unavailable.")
-    return warnings
-
+        logger.info("Outfit image download failed")
+    return []
 
 health_app = Flask("ff-bot2-health")
 
