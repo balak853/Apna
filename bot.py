@@ -1447,7 +1447,7 @@ async def register_every_interaction(_: Client, message: Message) -> None:
         logger.exception("Interaction registration handler failed")
 
 
-@bot.on_message(filters.command("get"))
+@bot.on_message(filters.command("get", case_sensitive=False))
 async def get_uid_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
