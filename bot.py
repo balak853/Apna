@@ -20,7 +20,7 @@ from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 from pyrogram import Client, filters
-from pyrogram.enums import ChatMemberStatus, ChatMembersFilter, ChatType
+from pyrogram.enums import ChatMemberStatus, ChatMembersFilter, ChatType, ParseMode
 from pyrogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -1478,7 +1478,7 @@ async def get_uid_command(_: Client, message: Message) -> None:
                 "/get UID\n\n"
                 "Example:\n"
                 "/get 1589573783</pre>",
-                parse_mode="HTML",
+                parse_mode=ParseMode.HTML,
                 quote=True,
             )
             return
@@ -1486,7 +1486,7 @@ async def get_uid_command(_: Client, message: Message) -> None:
         uid = arguments[0]
         processing = await message.reply_text(
             "<b>⏳ Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇꜱᴛ...</b>",
-            parse_mode="HTML",
+            parse_mode=ParseMode.HTML,
             quote=True,
         )
         primary_payload, fallback_payload = await asyncio.gather(
@@ -1525,14 +1525,14 @@ async def get_uid_command(_: Client, message: Message) -> None:
             await message.reply_text(
                 "<pre>❌ Pʀᴏғɪʟᴇ Nᴏᴛ Fᴏᴜɴᴅ\n\n"
                 "Please check the UID and try again.</pre>",
-                parse_mode="HTML",
+                parse_mode=ParseMode.HTML,
                 quote=True,
             )
             return
 
         await message.reply_text(
             build_profile_output(uid, valid_payloads),
-            parse_mode="HTML",
+            parse_mode=ParseMode.HTML,
             quote=True,
         )
         media_warnings = await send_profile_media(message, uid)
@@ -1549,7 +1549,7 @@ async def get_uid_command(_: Client, message: Message) -> None:
         await message.reply_text(
             "<pre>❌ Pʀᴏғɪʟᴇ Nᴏᴛ Fᴏᴜɴᴅ\n\n"
             "Please check the UID and try again.</pre>",
-            parse_mode="HTML",
+            parse_mode=ParseMode.HTML,
             quote=True,
         )
 
