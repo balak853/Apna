@@ -1389,15 +1389,25 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
     )
 
 
-async def send_profile_media(message: Message, uid: str) -> None:
+async def send_profile_media(message: Message, uid: str) -> list[str]:
+    warnings: list[str] = []
     banner = await fetch_image_bytes(BANNER_API_URL)
     if banner is None:
         banner = await fetch_image_bytes(FALLBACK_BANNER_API_URL.format(uid=uid))
+        if banner is not None:
+            warnings.append(
+                "⚠️ Primary banner API unavailable — fallback banner API used."
+            )
+        else:
+            warnings.append(
+                "⚠️ Primary and fallback banner APIs are unavailable."
+            )
     if banner is not None:
         try:
             await message.reply_sticker(banner, quote=True)
         except Exception:
             logger.exception("Could not send profile banner sticker")
+            warnings.append("⚠️ Banner could not be sent by Telegram.")
 
     outfit = await fetch_image_bytes(OUTFIT_API_URL.format(uid=uid))
     if outfit is not None:
@@ -1405,6 +1415,10 @@ async def send_profile_media(message: Message, uid: str) -> None:
             await message.reply_photo(outfit, quote=True)
         except Exception:
             logger.exception("Could not send profile outfit photo")
+            warnings.append("⚠️ Outfit image could not be sent by Telegram.")
+    else:
+        warnings.append("⚠️ Outfit image API is unavailable.")
+    return warnings
 
 
 health_app = Flask("ff-bot2-health")
@@ -1471,10 +1485,24 @@ async def get_uid_command(_: Client, message: Message) -> None:
             parse_mode="HTML",
             quote=True,
         )
-        payloads = await asyncio.gather(
+        primary_payload, fallback_payload = await asyncio.gather(
             fetch_player_info(PLAYER_INFO_API_URL.format(uid=uid)),
             fetch_player_info(SECONDARY_PLAYER_INFO_API_URL.format(uid=uid)),
         )
+        fallback_warnings: list[str] = []
+        if primary_payload is None and fallback_payload is not None:
+            fallback_warnings.append(
+                "⚠️ Primary player-info API unavailable — fallback player-info API used."
+            )
+        elif primary_payload is None and fallback_payload is None:
+            fallback_warnings.append(
+                "⚠️ Primary and fallback player-info APIs are unavailable."
+            )
+        elif fallback_payload is None:
+            fallback_warnings.append(
+                "⚠️ Fallback player-info API unavailable — primary API data used."
+            )
+        payloads = [payload for payload in (primary_payload, fallback_payload) if payload is not None]
         valid_payloads = [payload for payload in payloads if payload is not None]
 
         if processing is not None:
@@ -1485,6 +1513,11 @@ async def get_uid_command(_: Client, message: Message) -> None:
             processing = None
 
         if not valid_payloads:
+            if fallback_warnings:
+                await message.reply_text(
+                    "\n".join(fallback_warnings),
+                    quote=True,
+                )
             await message.reply_text(
                 "<pre>❌ Pʀᴏғɪʟᴇ Nᴏᴛ Fᴏᴜɴᴅ\n\n"
                 "Please check the UID and try again.</pre>",
@@ -1498,7 +1531,10 @@ async def get_uid_command(_: Client, message: Message) -> None:
             parse_mode="HTML",
             quote=True,
         )
-        await send_profile_media(message, uid)
+        media_warnings = await send_profile_media(message, uid)
+        all_warnings = fallback_warnings + media_warnings
+        if all_warnings:
+            await message.reply_text("\n".join(all_warnings), quote=True)
     except Exception:
         logger.exception("Get UID command failed")
         if processing is not None:
