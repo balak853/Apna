@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import re
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -1329,13 +1330,20 @@ async def fetch_image_bytes(url: str) -> bytes | None:
     return None
 
 
-def make_named_file(content: bytes, filename: str) -> io.BytesIO:
-    file_object = io.BytesIO(content)
-    file_object.name = filename
-    return file_object
+def create_media_temp_file(content: bytes, suffix: str) -> str:
+    DOWNLOADS_DIR.mkdir(exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix=suffix,
+        prefix="profile_",
+        dir=DOWNLOADS_DIR,
+        delete=False,
+    ) as temporary_file:
+        temporary_file.write(content)
+        return temporary_file.name
 
 
-def make_sticker_file(image_bytes: bytes) -> io.BytesIO:
+def make_sticker_file(image_bytes: bytes) -> str:
     # Telegram stickers must be sent as a sticker-compatible WEBP file.
     from PIL import Image
 
@@ -1344,9 +1352,7 @@ def make_sticker_file(image_bytes: bytes) -> io.BytesIO:
         sticker.thumbnail((512, 512), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         sticker.save(output, format="WEBP", lossless=True, method=6)
-    output.name = "profile-banner.webp"
-    output.seek(0)
-    return output
+    return create_media_temp_file(output.getvalue(), ".webp")
 
 
 def build_profile_output(uid: str, payloads: list[Any]) -> str:
@@ -1437,18 +1443,26 @@ async def send_profile_media(message: Message, uid: str) -> list[str]:
             warnings.append("⚠️ Banner could not be sent by Telegram.")
         finally:
             if sticker_file is not None:
-                sticker_file.close()
+                try:
+                    Path(sticker_file).unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Could not remove temporary banner file")
 
     outfit = await fetch_image_bytes(OUTFIT_API_URL.format(uid=uid))
     if outfit is not None:
-        outfit_file = make_named_file(outfit, "profile-outfit.png")
+        outfit_file = None
         try:
+            outfit_file = create_media_temp_file(outfit, ".png")
             await message.reply_photo(outfit_file, quote=True)
         except Exception:
             logger.exception("Could not send profile outfit photo")
             warnings.append("⚠️ Outfit image could not be sent by Telegram.")
         finally:
-            outfit_file.close()
+            if outfit_file is not None:
+                try:
+                    Path(outfit_file).unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Could not remove temporary outfit file")
     else:
         warnings.append("⚠️ Outfit image API is unavailable.")
     return warnings
