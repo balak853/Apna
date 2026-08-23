@@ -32,6 +32,7 @@ from pyrogram.types import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
+DOWNLOADS_DIR = BASE_DIR / "Downloads"
 CONFIG_PATH = BASE_DIR / "config.json"
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 LIKE_TIMEOUT = httpx.Timeout(connect=8.0, read=20.0, write=8.0, pool=8.0)
