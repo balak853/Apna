@@ -1372,74 +1372,144 @@ def make_sticker_file(image_bytes: bytes) -> str:
 
 
 def build_profile_output(uid: str, payloads: list[Any]) -> str:
-    def value(*aliases: str) -> str:
-        return html_profile_text(profile_value(payloads, set(aliases)))
+    missing = "Nᴏᴛ Aᴠᴀɪʟᴀʙʟᴇ"
 
-    def nested_value(container_aliases: set[str], field_aliases: set[str]) -> str:
+    def value(*aliases: str) -> str:
+        found = profile_value(payloads, set(aliases))
+        if found in (None, ""):
+            return missing
+        return html_profile_text(found)
+
+    def nested_value(
+        container_aliases: set[str], field_aliases: set[str]
+    ) -> Any:
         for payload in payloads:
             container = find_value(payload, container_aliases)
             if isinstance(container, dict):
-                result = find_value(container, field_aliases)
-                if result not in (None, ""):
-                    return html_profile_text(result)
-        return html_profile_text(None)
+                found = find_value(container, field_aliases)
+                if found not in (None, ""):
+                    return found
+        return None
+
+    def readable_timestamp(*aliases: str) -> str:
+        found = profile_value(payloads, set(aliases))
+        if found in (None, ""):
+            return missing
+        try:
+            timestamp = int(str(found).replace(",", ""))
+            return html_profile_text(
+                datetime.fromtimestamp(timestamp, tz=IST).strftime(
+                    "%d %b %Y, %I:%M %p"
+                )
+            )
+        except (TypeError, ValueError, OverflowError, OSError):
+            return missing
+
+    def clean_tag(*aliases: str) -> str:
+        found = profile_value(payloads, set(aliases))
+        if found in (None, "", [], {}):
+            return missing
+        if isinstance(found, list):
+            parts = [str(item) for item in found if item not in (None, "")]
+            return html_profile_text(", ".join(parts)) if parts else missing
+        return html_profile_text(str(found).strip("[]\"'"))
+
+    def count_value(*aliases: str) -> str:
+        found = profile_value(payloads, set(aliases))
+        if isinstance(found, (list, tuple, set)):
+            return str(len(found))
+        if found in (None, ""):
+            return missing
+        return html_profile_text(found)
+
+    def readable_gender() -> str:
+        found = profile_value(payloads, {"gender", "sex"})
+        if found in (None, ""):
+            return missing
+        normalized = str(found).upper()
+        if normalized.endswith("MALE"):
+            return "Mᴀʟᴇ"
+        if normalized.endswith("FEMALE"):
+            return "Fᴇᴍᴀʟᴇ"
+        return html_profile_text(found)
+
+    def readable_language() -> str:
+        found = profile_value(payloads, {"language", "lang"})
+        if found in (None, ""):
+            return missing
+        normalized = str(found)
+        return html_profile_text(
+            normalized.rsplit("_", 1)[-1] if "_" in normalized else normalized
+        )
 
     resolved_uid = profile_value(
         payloads,
-        {"uid", "playeruid", "playerid", "userid"},
+        {"uid", "playeruid", "playerid", "userid", "accountid"},
     )
+    pet_id = nested_value({"petinfo"}, {"id"})
+    pet_selected = nested_value({"petinfo"}, {"isselected"})
+    skills = profile_value(payloads, {"equipedskills", "equippedskills", "skills"})
+    clothes = profile_value(payloads, {"clothes", "outfit", "outfits"})
+    weapons = profile_value(payloads, {"weaponskinshows", "weaponskins", "guns skins"})
+    pet_display = "Eǫᴜɪᴘᴘᴇᴅ" if pet_id not in (None, "") else missing
+    pet_status = (
+        "Eǫᴜɪᴘᴘᴇᴅ" if pet_selected is True else
+        "Nᴏᴛ Eǫᴜɪᴘᴘᴇᴅ" if pet_selected is False else missing
+    )
+    skill_count = str(len(skills)) if isinstance(skills, (list, tuple, set)) else missing
+    weapon_count = str(len(weapons)) if isinstance(weapons, (list, tuple, set)) else missing
+
     return (
         "<pre>"
         "╭━━━━━━━━━━━━━━━━━━━━━━━╮\n"
-        "│   🔥 FREE FIRE PROFILE\n"
+        "│   🔥 Fʀᴇᴇ Fɪʀᴇ Pʀᴏғɪʟᴇ\n"
         "╰━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
-        "┌─ 👤 PLAYER INFORMATION\n"
-        f"├─ 🎮 Nickname : {value('nickname', 'playername', 'playernickname', 'name')}\n"
-        f"├─ 🆔 UID      : {html_profile_text(resolved_uid or uid)}\n"
-        f"├─ 🌍 Region   : {value('region', 'servername', 'server', 'country')}\n"
-        f"├─ ⭐ Level    : {value('level', 'playerlevel')}\n"
-        f"├─ ✨ EXP      : {value('exp', 'experience', 'playerexp')}\n"
-        f"├─ ❤️ Likes    : {value('likes', 'like', 'likecount', 'totallikes', 'liked')}\n"
-        f"├─ 🎖️ Badges   : {value('badges', 'badge', 'badgecount', 'badgeid')}\n"
-        f"├─ 💎 Prime    : {value('prime', 'primelevel', 'prime_level')}\n"
-        f"└─ 🎮 Version  : {value('version', 'gameversion')}\n\n"
-        "┌─ 📅 ACCOUNT INFORMATION\n"
-        f"├─ 🗓️ Created  : {value('created', 'createdat', 'createat', 'accountcreated', 'createddate')}\n"
-        f"├─ 🕐 Last Login : {value('lastlogin', 'lastloginat', 'lastlogindate', 'lastseen')}\n"
-        f"└─ 🎟️ Elite Pass : {value('elitepass', 'elite_pass', 'elitepasslevel')}\n\n"
-        "┌─ 🏆 RANK INFORMATION\n"
-        f"├─ 🔥 BR Rank       : {value('brrank', 'br_rank', 'battleroyalerank', 'rank')}\n"
-        f"├─ 📊 BR Points     : {value('brpoints', 'br_points', 'battleroyalepts', 'rankingpoints')}\n"
-        f"├─ 🏆 BR Max Rank   : {value('brmaxrank', 'br_max_rank', 'maxrank')}\n"
-        f"├─ ⚔️ CS Rank       : {value('csrank', 'cs_rank', 'clashsquadrank')}\n"
-        f"├─ 📊 CS Points     : {value('cspoints', 'cs_points', 'clashsquadpts')}\n"
-        f"└─ 🏆 CS Max Rank   : {value('csmaxrank', 'cs_max_rank')}\n\n"
-        "┌─ 🏰 GUILD INFORMATION\n"
-        f"├─ 🏰 Guild Name    : {value('guildname', 'guild_name', 'clanname')}\n"
-        f"├─ 🆔 Guild ID      : {value('guildid', 'guild_id', 'clanid')}\n"
-        f"├─ ⭐ Guild Level   : {value('guildlevel', 'guild_level', 'clanlevel')}\n"
-        f"├─ 👥 Members       : {value('members', 'guildmembers', 'membercount', 'membernum')}\n"
-        f"└─ 👑 Captain       : {value('captain', 'guildcaptain', 'leader', 'captainid')}\n\n"
-        "┌─ 🐾 PET INFORMATION\n"
-        f"├─ 🐾 Pet           : {nested_value({"petinfo"}, {"id"})}\n"
-        f"├─ ⭐ Level         : {nested_value({"petinfo"}, {"level"})}\n"
-        f"├─ ✨ EXP           : {nested_value({"petinfo"}, {"exp"})}\n"
-        f"└─ ⚡ Status        : {nested_value({"petinfo"}, {"isselected"})}\n\n"
-        "┌─ ⚡ LOADOUT\n"
-        f"├─ ⚡ Skills        : {value('skills', 'skill', 'equippedskills', 'equipedskills')}\n"
-        f"├─ 👕 Outfit        : {value('outfit', 'outfits', 'clothes')}\n"
-        f"└─ 🔫 Weapon Skins : {value('weaponskins', 'weapon_skins', 'gunskins', 'weaponskinshows')}\n\n"
-        "┌─ 📱 SOCIAL INFORMATION\n"
-        f"├─ 🚻 Gender        : {value('gender', 'sex')}\n"
-        f"├─ 🌐 Language      : {value('language', 'lang')}\n"
-        f"├─ 🏷️ Battle Tag   : {value('battletag', 'battle_tag')}\n"
-        f"├─ 🎯 Social Tag   : {value('socialtag', 'social_tag')}\n"
-        f"└─ ✍️ Signature    : {value('signature', 'bio', 'about')}\n\n"
-        "┌─ 🛡️ CREDIT SCORE\n"
-        f"└─ ⭐ Score         : {value('creditscore', 'credit_score', 'credits')}\n\n"
+        "┌─ 👤 Pʟᴀʏᴇʀ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
+        f"├─ 🎮 Nɪᴄᴋɴᴀᴍᴇ  : {value('nickname', 'playername', 'playernickname', 'name')}\n"
+        f"├─ 🆔 Uɪᴅ       : {html_profile_text(resolved_uid or uid)}\n"
+        f"├─ 🌍 Rᴇɢɪᴏɴ    : {value('region', 'servername', 'server', 'country')}\n"
+        f"├─ ⭐ Lᴇᴠᴇʟ     : {value('level', 'playerlevel')}\n"
+        f"├─ ✨ Eхᴘ       : {value('exp', 'experience', 'playerexp')}\n"
+        f"├─ ❤️ Lɪᴋᴇs     : {value('likes', 'like', 'likecount', 'totallikes', 'liked')}\n"
+        f"├─ 🎖️ Bᴀᴅɢᴇs   : {value('badges', 'badge', 'badgecount')}\n"
+        f"├─ 💎 Pʀɪᴍᴇ     : {value('prime', 'primelevel', 'prime_level')}\n"
+        f"└─ 🎮 Vᴇʀsɪᴏɴ   : {value('version', 'gameversion')}\n\n"
+        "┌─ 📅 Aᴄᴄᴏᴜɴᴛ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
+        f"├─ 🗓️ Cʀᴇᴀᴛᴇᴅ   : {readable_timestamp('created', 'createdat', 'createat', 'accountcreated', 'createddate')}\n"
+        f"├─ 🕐 Lᴀsᴛ Lᴏɢɪɴ : {readable_timestamp('lastlogin', 'lastloginat', 'lastlogindate', 'lastseen')}\n"
+        f"└─ 🎟️ Eʟɪᴛᴇ Pᴀss : {value('elitepass', 'elite_pass', 'elitepasslevel')}\n\n"
+        "┌─ 🏆 Rᴀɴᴋ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
+        f"├─ 🔥 Bʀ Rᴀɴᴋ      : {value('brrank', 'br_rank', 'battleroyalerank', 'rank')}\n"
+        f"├─ 📊 Bʀ Pᴏɪɴᴛs    : {value('brpoints', 'br_points', 'battleroyalepts', 'rankingpoints')}\n"
+        f"├─ 🏆 Bʀ Mᴀx Rᴀɴᴋ  : {value('brmaxrank', 'br_max_rank', 'maxrank')}\n"
+        f"├─ ⚔️ Cꜱ Rᴀɴᴋ      : {value('csrank', 'cs_rank', 'clashsquadrank')}\n"
+        f"├─ 📊 Cꜱ Pᴏɪɴᴛs    : {value('cspoints', 'cs_points', 'clashsquadpts')}\n"
+        f"└─ 🏆 Cꜱ Mᴀx Rᴀɴᴋ  : {value('csmaxrank', 'cs_max_rank')}\n\n"
+        "┌─ 🏰 Gᴜɪʟᴅ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
+        f"├─ 🏰 Gᴜɪʟᴅ Nᴀᴍᴇ  : {value('guildname', 'guild_name', 'clanname')}\n"
+        f"├─ 🆔 Gᴜɪʟᴅ Iᴅ    : {value('guildid', 'guild_id', 'clanid')}\n"
+        f"├─ ⭐ Gᴜɪʟᴅ Lᴇᴠᴇʟ : {value('guildlevel', 'guild_level', 'clanlevel')}\n"
+        f"├─ 👥 Mᴇᴍʙᴇʀs     : {value('members', 'guildmembers', 'membercount', 'membernum')}\n"
+        f"└─ 👑 Cᴀᴘᴛᴀɪɴ     : {value('captain', 'guildcaptain', 'leader', 'captainid')}\n\n"
+        "┌─ 🐾 Pᴇᴛ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
+        f"├─ 🐾 Pᴇᴛ         : {pet_display}\n"
+        f"├─ ⭐ Lᴇᴠᴇʟ       : {html_profile_text(nested_value({"petinfo"}, {"level"}) or missing)}\n"
+        f"├─ ✨ Eхᴘ         : {html_profile_text(nested_value({"petinfo"}, {"exp"}) or missing)}\n"
+        f"└─ ⚡ Sᴛᴀᴛᴜs      : {pet_status}\n\n"
+        "┌─ ⚡ Lᴏᴀᴅᴏᴜᴛ\n"
+        f"├─ ⚡ Sᴋɪʟʟs      : {skill_count} Eǫᴜɪᴘᴘᴇᴅ\n"
+        f"├─ 👕 Oᴜᴛғɪᴛ     : {'Eǫᴜɪᴘᴘᴇᴅ' if clothes else missing}\n"
+        f"└─ 🔫 Wᴇᴀᴘᴏɴ Sᴋɪɴs : {weapon_count} Dɪsᴘʟᴀʏᴇᴅ\n\n"
+        "┌─ 📱 Sᴏᴄɪᴀʟ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
+        f"├─ 🚻 Gᴇɴᴅᴇʀ      : {readable_gender()}\n"
+        f"├─ 🌐 Lᴀɴɢᴜᴀɢᴇ    : {readable_language()}\n"
+        f"├─ 🏷️ Bᴀᴛᴛʟᴇ Tᴀɢ : {clean_tag('battletag', 'battle_tag')}\n"
+        f"├─ 🎯 Sᴏᴄɪᴀʟ Tᴀɢ : {clean_tag('socialtag', 'social_tag')}\n"
+        f"└─ ✍️ Sɪɢɴᴀᴛᴜʀᴇ : {value('signature', 'bio', 'about')}\n\n"
+        "┌─ 🛡️ Cʀᴇᴅɪᴛ Sᴄᴏʀᴇ\n"
+        f"└─ ⭐ Sᴄᴏʀᴇ       : {value('creditscore', 'credit_score', 'credits')}\n\n"
         "╭━━━━━━━━━━━━━━━━━━━━━━━╮\n"
-        "│    ✅ PROFILE FOUND\n"
-        "│\n"
+        "│    ✅ Pʀᴏғɪʟᴇ Fᴏᴜɴᴅ\n"
         "╰━━━━━━━━━━━━━━━━━━━━━━━╯"
         "</pre>"
     )
