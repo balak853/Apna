@@ -81,12 +81,16 @@ API_CATALOG: list[dict[str, str]] = [
     {
         "name": "BANNER IMAGE API — PRIMARY",
         "category": "BANNER IMAGE",
-        "url": "https://image.killersharmabot.online/banner-image",
+        "url": "https://vertex-x-banner.vercel.app/profile?uid={UID}",
     },
     {
-        "name": "BANNER IMAGE API — FALLBACK",
+        "name": "BANNER IMAGE API — SECONDARY",
         "category": "BANNER IMAGE",
-        "url": "https://vertex-x-banner.vercel.app/profile?uid={UID}",
+        "url": (
+            "https://image.killersharmabot.online/banner-image?"
+            "headPic={HEADPIC}&bannerId={BANNERID}&name={NAME}&level={LEVEL}"
+            "&guild={GUILD}&pinId={PINID}&celebrity={CELEBRITY}&frame={FRAME}"
+        ),
     },
     {
         "name": "OUTFIT IMAGE API",
@@ -1224,8 +1228,12 @@ PLAYER_INFO_API_URL = (
 SECONDARY_PLAYER_INFO_API_URL = (
     "https://star-info-api.lovable.app/functions/v1/info-api/accinfo?uid={uid}"
 )
-BANNER_API_URL = "https://image.killersharmabot.online/banner-image"
-FALLBACK_BANNER_API_URL = "https://vertex-x-banner.vercel.app/profile?uid={uid}"
+PRIMARY_BANNER_API_URL = "https://vertex-x-banner.vercel.app/profile?uid={uid}"
+SECONDARY_BANNER_API_URL = (
+    "https://image.killersharmabot.online/banner-image"
+    "?headPic={headPic}&bannerId={bannerId}&name={name}&level={level}"
+    "&guild={guild}&pinId={pinId}&celebrity={celebrity}&frame={frame}"
+)
 OUTFIT_API_URL = (
     "https://vertex-x-outfit.vercel.app/outfit-image?uid={uid}&key=VERTEX"
 )
@@ -1320,10 +1328,17 @@ async def fetch_image_bytes(url: str) -> bytes | None:
         ) as client:
             response = await client.get(url)
         content_type = response.headers.get("content-type", "").lower()
-        if response.status_code < 400 and response.content and (
-            content_type.startswith("image/") or not content_type
-        ):
-            return response.content
+        if response.status_code >= 400 or not response.content or not content_type.startswith("image/"):
+            return None
+        try:
+            from PIL import Image
+
+            with Image.open(io.BytesIO(response.content)) as image:
+                image.verify()
+        except Exception:
+            logger.warning("Image API returned invalid image data", exc_info=True)
+            return None
+        return response.content
     except httpx.HTTPError:
         return None
     except Exception:
@@ -1421,7 +1436,9 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
     )
 
 
-async def send_profile_media(message: Message, uid: str) -> list[str]:
+async def send_profile_media(
+    message: Message, uid: str, payloads: list[Any]
+) -> list[str]:
     async def send_banner_from_url(url: str, source: str) -> bool:
         banner = await fetch_image_bytes(url)
         if banner is None:
@@ -1443,13 +1460,35 @@ async def send_profile_media(message: Message, uid: str) -> list[str]:
                 except OSError:
                     logger.warning("Could not remove temporary %s banner file", source)
 
-    primary_banner_sent = await send_banner_from_url(BANNER_API_URL, "Primary")
+    primary_banner_sent = await send_banner_from_url(
+        PRIMARY_BANNER_API_URL.format(uid=uid),
+        "Primary",
+    )
     if not primary_banner_sent:
-        logger.info("Primary banner failed, using fallback")
-        await send_banner_from_url(
-            FALLBACK_BANNER_API_URL.format(uid=uid),
-            "Fallback",
+        secondary_values = {
+            "headPic": profile_value(payloads, {"headpic"}),
+            "bannerId": profile_value(payloads, {"bannerid"}),
+            "name": profile_value(payloads, {
+                "name", "nickname", "playername", "playernickname",
+            }),
+            "level": profile_value(payloads, {"level", "playerlevel"}),
+            "guild": profile_value(payloads, {
+                "guild", "guildname", "clan", "clanname",
+            }),
+            "pinId": profile_value(payloads, {"pinid"}),
+            "celebrity": profile_value(payloads, {"celebrity"}),
+            "frame": profile_value(payloads, {"frame"}),
+        }
+        secondary_url = SECONDARY_BANNER_API_URL.format(
+            **{
+                key: "" if value in (None, "") else str(value)
+                for key, value in secondary_values.items()
+            }
         )
+        logger.info("Primary banner failed, using secondary banner API")
+        banner_sent = await send_banner_from_url(secondary_url, "Secondary")
+        if not banner_sent:
+            return ["⚠️ Bᴀɴɴᴇʀ Gᴇɴᴇʀᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ"]
 
     outfit = await fetch_image_bytes(OUTFIT_API_URL.format(uid=uid))
     if outfit is not None:
@@ -1579,7 +1618,7 @@ async def get_uid_command(_: Client, message: Message) -> None:
             parse_mode=ParseMode.HTML,
             quote=True,
         )
-        media_warnings = await send_profile_media(message, uid)
+        media_warnings = await send_profile_media(message, uid, valid_payloads)
         all_warnings = fallback_warnings + media_warnings
         if all_warnings:
             await message.reply_text("\n".join(all_warnings), quote=True)
