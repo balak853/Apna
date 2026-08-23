@@ -1409,10 +1409,61 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
         found = profile_value(payloads, set(aliases))
         if found in (None, "", [], {}):
             return missing
-        if isinstance(found, list):
-            parts = [str(item) for item in found if item not in (None, "")]
+
+        def readable_item(item: Any) -> str:
+            if isinstance(item, dict):
+                label = find_value(item, {"tag", "name", "label", "title", "value"})
+                return str(label).strip() if label not in (None, "") else ""
+            return str(item).strip()
+
+        if isinstance(found, (list, tuple, set)):
+            parts = [readable_item(item) for item in found]
+            return html_profile_text(", ".join(part for part in parts if part)) or missing
+
+        cleaned = html.unescape(str(found)).strip()
+        try:
+            parsed = json.loads(cleaned)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            return clean_tag_value(parsed)
+        cleaned = cleaned.strip("[]{}\"'")
+        return html_profile_text(cleaned) if cleaned else missing
+
+    def clean_tag_value(found: Any) -> str:
+        if isinstance(found, dict):
+            parts = [str(value).strip() for key, value in found.items()
+                     if str(key).lower() not in {"id", "tagid"} and value not in (None, "")]
             return html_profile_text(", ".join(parts)) if parts else missing
-        return html_profile_text(str(found).strip("[]\"'"))
+        if isinstance(found, (list, tuple, set)):
+            parts = [str(item).strip() for item in found if item not in (None, "")]
+            return html_profile_text(", ".join(parts)) if parts else missing
+        return html_profile_text(found) if found not in (None, "") else missing
+
+    def readable_badges() -> str:
+        found = profile_value(payloads, {"badges", "badge", "badgecount"})
+        if found in (None, "", [], {}):
+            return missing
+        if isinstance(found, (list, tuple, set)):
+            names = []
+            for item in found:
+                if isinstance(item, dict):
+                    name = find_value(item, {"name", "badgename", "title", "label"})
+                    if name not in (None, ""):
+                        names.append(str(name))
+                elif not str(item).strip().isdigit():
+                    names.append(str(item))
+            return html_profile_text(", ".join(names)) if names else missing
+        if isinstance(found, dict):
+            name = find_value(found, {"name", "badgename", "title", "label"})
+            return html_profile_text(name) if name not in (None, "") else missing
+        return missing if str(found).strip().isdigit() else html_profile_text(found)
+
+    def safe_identity(*aliases: str) -> str:
+        found = profile_value(payloads, set(aliases))
+        if found in (None, "") or str(found).strip().isdigit():
+            return missing
+        return html_profile_text(found)
 
     def count_value(*aliases: str) -> str:
         found = profile_value(payloads, set(aliases))
@@ -1471,7 +1522,7 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
         f"├─ ⭐ Lᴇᴠᴇʟ     : {value('level', 'playerlevel')}\n"
         f"├─ ✨ Eхᴘ       : {value('exp', 'experience', 'playerexp')}\n"
         f"├─ ❤️ Lɪᴋᴇs     : {value('likes', 'like', 'likecount', 'totallikes', 'liked')}\n"
-        f"├─ 🎖️ Bᴀᴅɢᴇs   : {value('badges', 'badge', 'badgecount')}\n"
+        f"├─ 🎖️ Bᴀᴅɢᴇs   : {readable_badges()}\n"
         f"├─ 💎 Pʀɪᴍᴇ     : {value('prime', 'primelevel', 'prime_level')}\n"
         f"└─ 🎮 Vᴇʀsɪᴏɴ   : {value('version', 'gameversion')}\n\n"
         "┌─ 📅 Aᴄᴄᴏᴜɴᴛ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
@@ -1487,7 +1538,7 @@ def build_profile_output(uid: str, payloads: list[Any]) -> str:
         f"└─ 🏆 Cꜱ Mᴀx Rᴀɴᴋ  : {value('csmaxrank', 'cs_max_rank')}\n\n"
         "┌─ 🏰 Gᴜɪʟᴅ Iɴғᴏʀᴍᴀᴛɪᴏɴ\n"
         f"├─ 🏰 Gᴜɪʟᴅ Nᴀᴍᴇ  : {value('guildname', 'guild_name', 'clanname')}\n"
-        f"├─ 🆔 Gᴜɪʟᴅ Iᴅ    : {value('guildid', 'guild_id', 'clanid')}\n"
+        f"├─ 🆔 Gᴜɪʟᴅ Iᴅ    : {safe_identity('guildid', 'guild_id', 'clanid')}\n"
         f"├─ ⭐ Gᴜɪʟᴅ Lᴇᴠᴇʟ : {value('guildlevel', 'guild_level', 'clanlevel')}\n"
         f"├─ 👥 Mᴇᴍʙᴇʀs     : {value('members', 'guildmembers', 'membercount', 'membernum')}\n"
         f"└─ 👑 Cᴀᴘᴛᴀɪɴ     : {value('captain', 'guildcaptain', 'leader', 'captainid')}\n\n"
