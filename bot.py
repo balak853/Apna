@@ -2191,11 +2191,11 @@ def build_bancheck_output(uid: str, ban_payload: dict[str, Any], player_payloads
     )
     created = profile_datetime(
         player_payloads,
-        {"created", "createddate", "accountcreated", "accountcreateddate", "creationdate", "registrationdate"},
+        {"created", "createddate", "createat", "accountcreated", "accountcreateddate", "creationdate", "registrationdate"},
     )
     last_login = profile_datetime(
         player_payloads,
-        {"accountlastlogin", "lastlogin", "lastlogindate", "lastloggedin", "lastseen"},
+        {"accountlastlogin", "lastlogin", "lastloginat", "lastlogindate", "lastloggedin", "lastseen"},
     )
     created_text = created.astimezone(IST).strftime("%d %b %Y") if created else "Not Available"
     duration = elapsed_calendar_duration(last_login, datetime.now(timezone.utc)) if last_login else "Not Available"
