@@ -146,6 +146,11 @@ async def telegram_bot_api(method: str, payload: dict[str, Any]) -> Any:
     return body.get("result")
 
 
+async def telegram_bot_id() -> int:
+    bot = await telegram_bot_api("getMe", {})
+    return int(bot["id"])
+
+
 def status_print(message: str) -> None:
     print(message, flush=True)
 
@@ -578,7 +583,7 @@ async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
         try:
             await telegram_bot_api("getChat", {"chat_id": int(chat_id)})
             bot_member = await telegram_bot_api(
-                "getChatMember", {"chat_id": int(chat_id), "user_id": "me"}
+                "getChatMember", {"chat_id": int(chat_id), "user_id": await telegram_bot_id()}
             )
             bot_status = str((bot_member or {}).get("status") or "").lower()
         except TelegramBotApiError as error:
@@ -2021,7 +2026,7 @@ async def add_force_command(_: Client, message: Message) -> None:
             return
         try:
             bot_member = await telegram_bot_api(
-                "getChatMember", {"chat_id": chat_id, "user_id": "me"}
+                "getChatMember", {"chat_id": chat_id, "user_id": await telegram_bot_id()}
             )
             bot_status = str((bot_member or {}).get("status") or "").lower()
             bot_is_admin = bot_status in {"administrator", "creator"}
