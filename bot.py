@@ -1428,6 +1428,119 @@ def failure_message(result: dict[str, Any], uid: str) -> str:
     return "🔌 Fᴀɪʟᴇᴅ Tᴏ Cᴏɴɴᴇᴄᴛ Tᴏ Tʜᴇ API. Pʟᴇᴀꜱᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ."
 
 
+async def fetch_vip_player_payloads(uid: str) -> list[Any]:
+    """Use the existing player-info APIs to resolve VIP display data safely."""
+    try:
+        payloads = await asyncio.gather(
+            fetch_player_info(PLAYER_INFO_API_URL.format(uid=uid)),
+            fetch_player_info(SECONDARY_PLAYER_INFO_API_URL.format(uid=uid)),
+            return_exceptions=True,
+        )
+    except Exception:
+        logger.exception("VIP player-info lookup failed")
+        return []
+    return [payload for payload in payloads if not isinstance(payload, Exception) and payload is not None]
+
+
+def vip_player_value(payloads: list[Any], aliases: set[str], fallback: Any = None) -> Any:
+    value = profile_value(payloads, aliases)
+    return fallback if value in (None, "") else value
+
+
+def vip_number(value: Any, fallback: int = 0) -> int:
+    number = as_number(value)
+    return number if number is not None else fallback
+
+
+def vip_escape(value: Any, fallback: str = "N/A") -> str:
+    text = fallback if value in (None, "") else str(value)
+    return html.escape(text, quote=True)
+
+
+async def build_vip_result(uid: str) -> str:
+    payloads = await fetch_vip_player_payloads(uid)
+    player_name = vip_player_value(
+        payloads,
+        {"nickname", "playername", "playernickname", "name", "username"},
+        "Not Available",
+    )
+    player_region = str(
+        vip_player_value(payloads, {"region", "servername", "server", "country"}, "IND")
+    ).upper()
+    before = vip_number(
+        vip_player_value(payloads, {"likes", "like", "likecount", "totallikes", "liked"}),
+        0,
+    )
+
+    api_config = await get_api_configuration()
+    selected_apis = configured_like_apis(api_config, "all")
+    if not selected_apis:
+        return (
+            "<b>━━━━━━━━━━━━━━━━━━━━━</b>\n"
+            "<b>⚠️ Nᴏ Lɪᴋᴇ Aᴘɪ Is Cᴏɴғɪɢᴜʀᴇᴅ</b>\n"
+            f"🆔 <b>UID:</b> {vip_escape(uid)}"
+        )
+
+    results = await asyncio.gather(
+        *(call_like_api(api_name, template, uid, player_region) for api_name, template in selected_apis),
+        return_exceptions=True,
+    )
+    safe_results: list[dict[str, Any]] = []
+    for index, item in enumerate(results, start=1):
+        if isinstance(item, Exception):
+            logger.error("VIP Like API %s failed: %s", index, type(item).__name__)
+            safe_results.append({
+                "success": False,
+                "given": 0,
+                "message": "One Like API failed.",
+            })
+        else:
+            safe_results.append(item)
+
+    given_values = [vip_number(result.get("given"), 0) for result in safe_results]
+    total_given = sum(given_values)
+    api_lines = "\n".join(
+        f"⚡ <b>𝐀𝐏𝐈 {index}</b> +{given} Likes"
+        for index, given in enumerate(given_values, start=1)
+    )
+    error_lines = "\n".join(
+        f"⚠️ API {index}: {vip_escape(result.get('message'), 'API unavailable')}"
+        for index, result in enumerate(safe_results, start=1)
+        if given_values[index - 1] == 0 and result.get("message")
+    )
+    after = before + total_given
+
+    remaining_days = 0
+    try:
+        vip_record = await asyncio.to_thread(
+            autolike.find_one,
+            {"uid": uid, "region": player_region.lower()},
+        )
+        expires_at = (vip_record or {}).get("expires_at")
+        if isinstance(expires_at, datetime):
+            remaining_days = remaining_vip_days(expires_at)
+    except Exception:
+        logger.exception("VIP expiry lookup failed")
+
+    lines = [
+        "━━━━━━━━━━━━━━━━━━━━━",
+        "🌟 <b>ʟɪᴋᴇs sᴇɴᴛ sᴜᴄᴄᴇssғᴜʟʟʏ!</b>",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"🎮 <b>𝐍ᴀᴍᴇ:</b> {vip_escape(player_name)}",
+        f"🆔 <b>Ꮜɪᴅ:</b> {vip_escape(uid)}",
+        f"🌍 <b>Ꮢᴇɢɪᴏɴ:</b> {vip_escape(player_region)}",
+        f"👍 <b>Ᏼᴇғᴏʀᴇ:</b> {before}",
+        api_lines,
+        f"🎯 <b>Ꮐɪᴠᴇɴ:</b> {total_given}",
+        f"🚀 <b>Ꭺғᴛᴇʀ:</b> {after}",
+        "",
+        f"🎯 Rᴇᴍᴀɪɴɪɴɢ Dᴀʏs - {remaining_days}",
+    ]
+    if error_lines:
+        lines.extend(["", error_lines])
+    return "\n".join(lines)
+
+
 async def process_like(user_id: int, uid: str, region: str) -> tuple[str, dict[str, Any] | None]:
     slot = await asyncio.to_thread(reserve_like_slot_sync, user_id)
     if slot is None:
@@ -2726,6 +2839,51 @@ async def like_api_confirmation_callback(
     except Exception:
         logger.exception("Like API confirmation callback failed")
         await callback_query.answer("⚠️ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ.", show_alert=True)
+
+
+@bot.on_message(filters.command("vip", case_sensitive=False))
+async def vip_command(_: Client, message: Message) -> None:
+    processing: Message | None = None
+    try:
+        status_print("COMMAND RECEIVED: /vip")
+        if message.from_user is None or int(message.from_user.id) != int(CONFIG["admin_id"]):
+            return
+        arguments = command_arguments(message)
+        if len(arguments) != 1 or not UID_PATTERN.fullmatch(arguments[0]) or int(arguments[0]) <= 0:
+            await message.reply_text("▸ 𝗨sᴀɢᴇ: /vip ᴜɪᴅ\nE.xᴀᴍᴘʟᴇ: /vip 15010090688", quote=True)
+            return
+        uid = arguments[0]
+        processing = await message.reply_text(
+            "⏳ Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇsᴛ...",
+            quote=True,
+        )
+        result_text = await build_vip_result(uid)
+        await message.reply_text(
+            result_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("DEVELOPER", url="https://t.me/BALAK_TRUSTED")]]
+            ),
+            quote=True,
+        )
+    except Exception:
+        logger.exception("VIP command failed")
+        if processing is not None:
+            try:
+                await processing.delete()
+            except Exception:
+                logger.warning("Could not delete VIP processing message")
+        await message.reply_text(
+            "⚠️ Vɪᴘ Lɪᴋᴇ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ Sᴀғᴇʟʏ.",
+            quote=True,
+        )
+        return
+    finally:
+        if processing is not None:
+            try:
+                await processing.delete()
+            except Exception:
+                logger.warning("Could not delete VIP processing message")
 
 
 @bot.on_message(filters.command("addvip"))
