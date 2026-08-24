@@ -2058,6 +2058,186 @@ async def fetch_player_info(url: str) -> Any | None:
     return None
 
 
+BAN_CHECK_PRIMARY_URL = "https://api2.nftoken.info/checkbanned?id={uid}"
+BAN_CHECK_FALLBACK_URL = "https://ffban-ashu.vercel.app/checkbanned?id={uid}&key=ashu"
+
+
+def ban_response_is_valid(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(key in payload for key in ("is_banned", "status"))
+
+
+async def fetch_ban_response(url: str, api_name: str) -> dict[str, Any] | None:
+    try:
+        async with httpx.AsyncClient(
+            timeout=LIKE_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(url)
+        if response.status_code >= 400:
+            logger.warning("%s returned an HTTP error", api_name)
+            return None
+        try:
+            payload = response.json()
+        except ValueError:
+            logger.warning("%s returned invalid JSON", api_name)
+            return None
+        if not ban_response_is_valid(payload):
+            logger.warning("%s returned an unusable response", api_name)
+            return None
+        return payload
+    except httpx.TimeoutException:
+        logger.warning("%s timed out", api_name)
+    except httpx.HTTPError:
+        logger.warning("%s could not be reached", api_name)
+    except Exception:
+        logger.exception("Unexpected %s error", api_name)
+    return None
+
+
+def ban_status_is_banned(payload: dict[str, Any]) -> bool:
+    if payload.get("is_banned") is True:
+        return True
+    return str(payload.get("status", "")).strip().upper() == "BANNED"
+
+
+def parse_profile_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, (int, float)):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp /= 1000
+        try:
+            parsed = datetime.fromtimestamp(timestamp, timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+        parsed = None
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            for date_format in (
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d",
+                "%d-%m-%Y %H:%M:%S",
+                "%d-%m-%Y",
+                "%d/%m/%Y %H:%M:%S",
+                "%d/%m/%Y",
+                "%m/%d/%Y %H:%M:%S",
+                "%m/%d/%Y",
+            ):
+                try:
+                    parsed = datetime.strptime(text, date_format)
+                    break
+                except ValueError:
+                    continue
+        if parsed is None:
+            return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+
+def profile_datetime(payloads: list[Any], aliases: set[str]) -> datetime | None:
+    value = profile_value(payloads, aliases)
+    return parse_profile_datetime(value)
+
+
+def calendar_shift(value: datetime, years: int = 0, months: int = 0) -> datetime:
+    month_index = value.month - 1 + months + (years * 12)
+    year, month_zero = divmod(month_index, 12)
+    month = month_zero + 1
+    day = min(value.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def elapsed_calendar_duration(start: datetime, end: datetime) -> str:
+    if start > end:
+        start = end
+    years = end.year - start.year
+    cursor = calendar_shift(start, years=years)
+    if cursor > end:
+        years -= 1
+        cursor = calendar_shift(start, years=years)
+    months = (end.year - cursor.year) * 12 + end.month - cursor.month
+    candidate = calendar_shift(cursor, months=months)
+    if candidate > end:
+        months -= 1
+        candidate = calendar_shift(cursor, months=months)
+    remainder = end - candidate
+    days, seconds = divmod(int(remainder.total_seconds()), 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    return f"{years} years, {months} months, {days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+
+
+def bancheck_player_field(payloads: list[Any], aliases: set[str], fallback: Any = "Not Available") -> str:
+    value = profile_value(payloads, aliases)
+    return profile_text(value) if value not in (None, "") else str(fallback)
+
+
+def build_bancheck_output(uid: str, ban_payload: dict[str, Any], player_payloads: list[Any]) -> str:
+    player_name = ban_payload.get("nickname") or bancheck_player_field(
+        player_payloads, {"nickname", "playername", "playernickname", "name", "username"}
+    )
+    resolved_uid = ban_payload.get("player_id") or ban_payload.get("uid") or bancheck_player_field(
+        player_payloads, {"uid", "playeruid", "playerid", "userid", "accountid"}, uid
+    )
+    created = profile_datetime(
+        player_payloads,
+        {"created", "createddate", "accountcreated", "accountcreateddate", "creationdate", "registrationdate"},
+    )
+    last_login = profile_datetime(
+        player_payloads,
+        {"accountlastlogin", "lastlogin", "lastlogindate", "lastloggedin", "lastseen"},
+    )
+    created_text = created.astimezone(IST).strftime("%d %b %Y") if created else "Not Available"
+    duration = elapsed_calendar_duration(last_login, datetime.now(timezone.utc)) if last_login else "Not Available"
+    safe_name = html.escape(str(player_name), quote=True)
+    safe_uid = html.escape(str(resolved_uid), quote=True)
+    safe_created = html.escape(created_text, quote=True)
+    safe_duration = html.escape(duration, quote=True)
+    return (
+        "<b>╭━━━ 🛡 Bᴀɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ ━━━╮</b>\n"
+        "<b>│</b>\n"
+        f"<b>│ 👤 Nᴀᴍᴇ : {safe_name}</b>\n"
+        "<b>│ 🆔 Uɪᴅ :</b>\n"
+        f"<pre>{safe_uid}</pre>\n"
+        "<b>│ 📅 Cʀᴇᴀᴛᴇᴅ :</b>\n"
+        f"<pre>{safe_created}</pre>\n"
+        "<b>│</b>\n"
+        "<b>│ 🔴 Sᴛᴀᴛᴜs : 🔴 Bᴀɴɴᴇᴅ</b>\n"
+        f"<b>│ ⏳ Dᴜʀᴀᴛɪᴏɴ : {safe_duration}</b>\n"
+        "<b>│</b>\n"
+        "<b>├── ⚠️ Nᴏᴛɪᴄᴇ</b>\n"
+        "<b>│   Uɪᴅ ɪs ᴄᴜʀʀᴇɴᴛʟʏ ғʟᴀɢɢᴇᴅ</b>\n"
+        "<b>│   ᴀs ʙᴀɴɴᴇᴅ.</b>\n"
+        "<b>│</b>\n"
+        "<b>│ 📡 Sᴏᴜʀᴄᴇ : Lɪᴠᴇ API</b>\n"
+        "<b>│ 🔐 Nᴇᴠᴇʀ sʜᴀʀᴇ Pᴀssᴡᴏʀᴅ / OTP</b>\n"
+        "<b>╰━━━ ⚡ Lɪᴠᴇ Cʜᴇᴄᴋ ━━━╯</b>"
+    )
+
+
+def build_not_banned_output(uid: str, ban_payload: dict[str, Any], player_payloads: list[Any]) -> str:
+    player_name = ban_payload.get("nickname") or bancheck_player_field(
+        player_payloads, {"nickname", "playername", "playernickname", "name", "username"}
+    )
+    resolved_uid = ban_payload.get("player_id") or ban_payload.get("uid") or uid
+    return (
+        "<b>🛡 Bᴀɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ</b>\n\n"
+        f"👤 Nᴀᴍᴇ: {html.escape(str(player_name), quote=True)}\n"
+        f"🆔 Uɪᴅ: <code>{html.escape(str(resolved_uid), quote=True)}</code>\n"
+        "🟢 Sᴛᴀᴛᴜs: <b>Nᴏᴛ Bᴀɴɴᴇᴅ</b>"
+    )
+
+
 async def fetch_image_bytes(url: str) -> bytes | None:
     try:
         async with httpx.AsyncClient(
@@ -2575,6 +2755,76 @@ async def force_admin_callback(_: Client, callback_query: CallbackQuery) -> None
     except Exception:
         logger.exception("Force-join admin help callback failed")
         await callback_query.answer("⚠️ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ.", show_alert=True)
+
+
+@bot.on_message(filters.command("bancheck", case_sensitive=False))
+async def bancheck_command(_: Client, message: Message) -> None:
+    processing: Message | None = None
+    try:
+        status_print("COMMAND RECEIVED: /bancheck")
+        if not await command_access_allowed(message):
+            return
+        arguments = command_arguments(message)
+        if len(arguments) != 1 or not UID_PATTERN.fullmatch(arguments[0]):
+            await message.reply_text(
+                "<pre>❌ Invalid Usage\n\nUse:\n/bancheck UID\n\nExample:\n/bancheck 1589573783</pre>",
+                parse_mode=ParseMode.HTML,
+                quote=True,
+            )
+            return
+        uid = arguments[0]
+        processing = await message.reply_text(
+            "<b>⏳Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇꜱᴛ...</b>",
+            parse_mode=ParseMode.HTML,
+            quote=True,
+        )
+
+        ban_payload = await fetch_ban_response(
+            BAN_CHECK_PRIMARY_URL.format(uid=uid), "Primary ban API"
+        )
+        if ban_payload is None:
+            ban_payload = await fetch_ban_response(
+                BAN_CHECK_FALLBACK_URL.format(uid=uid), "Fallback ban API"
+            )
+        if ban_payload is None:
+            raise RuntimeError("ban APIs unavailable")
+
+        player_payloads = await asyncio.gather(
+            fetch_player_info(PLAYER_INFO_API_URL.format(uid=uid)),
+            fetch_player_info(SECONDARY_PLAYER_INFO_API_URL.format(uid=uid)),
+        )
+        player_payloads = [payload for payload in player_payloads if payload is not None]
+        if processing is not None:
+            try:
+                await processing.delete()
+            except Exception:
+                logger.warning("Could not delete bancheck processing message")
+            processing = None
+
+        if ban_status_is_banned(ban_payload):
+            await message.reply_text(
+                build_bancheck_output(uid, ban_payload, player_payloads),
+                parse_mode=ParseMode.HTML,
+                quote=True,
+            )
+        else:
+            await message.reply_text(
+                build_not_banned_output(uid, ban_payload, player_payloads),
+                parse_mode=ParseMode.HTML,
+                quote=True,
+            )
+    except Exception:
+        logger.exception("Bancheck command failed")
+        if processing is not None:
+            try:
+                await processing.delete()
+            except Exception:
+                pass
+        await message.reply_text(
+            "<pre>⚠️ Bᴀɴ Cʜᴇᴄᴋ Aʙʜɪ ᴀᴠᴀɪʟᴀʙʟᴇ ɴᴀʜɪ. Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.</pre>",
+            parse_mode=ParseMode.HTML,
+            quote=True,
+        )
 
 
 @bot.on_message(filters.command("get", case_sensitive=False))
