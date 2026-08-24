@@ -2224,6 +2224,12 @@ def build_bancheck_output(uid: str, ban_payload: dict[str, Any], player_payloads
     )
 
 
+def bancheck_developer_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("ᴅᴇᴠʟᴏᴘᴇʀ", url="https://t.me/BALAK_TRUSTED")]]
+    )
+
+
 def build_not_banned_output(uid: str, ban_payload: dict[str, Any], player_payloads: list[Any]) -> str:
     player_name = ban_payload.get("nickname") or bancheck_player_field(
         player_payloads, {"nickname", "playername", "playernickname", "name", "username"}
@@ -2816,12 +2822,14 @@ async def bancheck_command(_: Client, message: Message) -> None:
             await message.reply_text(
                 build_bancheck_output(uid, ban_payload, player_payloads),
                 parse_mode=ParseMode.HTML,
+                reply_markup=bancheck_developer_keyboard(),
                 quote=True,
             )
         else:
             await message.reply_text(
                 build_not_banned_output(uid, ban_payload, player_payloads),
                 parse_mode=ParseMode.HTML,
+                reply_markup=bancheck_developer_keyboard(),
                 quote=True,
             )
     except Exception:
