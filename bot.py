@@ -221,6 +221,7 @@ groups: Collection = database["groups"]
 apis: Collection = database["apis"]
 autolike: Collection = database["autolike"]
 force_join: Collection = database["force_join"]
+settings: Collection = database["settings"]
 
 
 def utc_now() -> datetime:
@@ -664,12 +665,31 @@ async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
     return missing
 
 
+async def force_join_verification_enabled() -> bool:
+    try:
+        document = await asyncio.to_thread(
+            settings.find_one, {"_id": "force_join_verification"}
+        )
+    except PyMongoError:
+        logger.exception("Force-join verification setting read failed")
+        return True
+    return True if document is None else bool(document.get("enabled", True))
+
+
 async def command_access_allowed(message: Message) -> bool:
     user_id = getattr(getattr(message, "from_user", None), "id", None)
     if is_configured_admin(user_id):
         return True
     if user_id is None:
         return False
+    if not await force_join_verification_enabled():
+        if is_private_chat(message):
+            await message.reply_text(
+                "<pre>🚫 Aᴄᴄᴇss Dᴇɴɪᴇᴅ!\n\nTʜɪs Cᴏᴍᴍᴀɴᴅ Iѕ Oɴʟʏ Aᴠᴀɪʟᴀʙʟᴇ Iɴ Gʀᴏᴜᴘs Fᴏʀ Rᴇɢᴜʟᴀʀ Uѕᴇʀѕ.</pre>",
+                parse_mode=ParseMode.HTML, quote=True,
+            )
+            return False
+        return True
     missing = await missing_force_join_chats(int(user_id))
     if missing is None:
         await message.reply_text(
@@ -698,6 +718,9 @@ async def verify_force_join_callback(callback_query: CallbackQuery) -> None:
     message = callback_query.message
     user = callback_query.from_user
     if message is None or user is None:
+        return
+    if not await force_join_verification_enabled():
+        await callback_query.answer("ℹ️ Fᴏʀᴄᴇ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Iѕ Dɪsᴀʙʟᴇᴅ.", show_alert=True)
         return
     missing = await missing_force_join_chats(int(user.id))
     if missing is None:
@@ -1995,6 +2018,56 @@ async def register_every_interaction(_: Client, message: Message) -> None:
             await register_user(message.from_user)
     except Exception:
         logger.exception("Interaction registration handler failed")
+
+
+async def set_force_join_verification(message: Message, enabled: bool) -> None:
+    if not is_configured_admin(getattr(message.from_user, "id", None)):
+        return
+    try:
+        document = await asyncio.to_thread(
+            settings.find_one, {"_id": "force_join_verification"}
+        )
+        current_enabled = True if document is None else bool(document.get("enabled", True))
+        if current_enabled == enabled:
+            state = "Eɴᴀʙʟᴇᴅ" if enabled else "Dɪsᴀʙʟᴇᴅ"
+            await message.reply_text(
+                f"<pre>ℹ️ Fᴏʀᴄᴇ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Aʟʀᴇᴀᴅʏ {state}.</pre>",
+                parse_mode=ParseMode.HTML, quote=True,
+            )
+            return
+        await asyncio.to_thread(
+            settings.update_one,
+            {"_id": "force_join_verification"},
+            {"$set": {"enabled": enabled, "updated_at": utc_now()}},
+            upsert=True,
+        )
+        if enabled:
+            text = "✅ Fᴏʀᴄᴇ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Eɴᴀʙʟᴇᴅ"
+        else:
+            text = "⚠️ Fᴏʀᴄᴇ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Dɪsᴀʙʟᴇᴅ"
+        await message.reply_text(f"<pre>{text}</pre>", parse_mode=ParseMode.HTML, quote=True)
+    except PyMongoError:
+        logger.exception("Force-join verification setting update failed")
+        await message.reply_text(
+            "<pre>⚠️ Fᴏʀᴄᴇ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Sᴇᴛᴛɪɴɢ Sᴀᴠᴇ Fᴀɪʟᴇᴅ.</pre>",
+            parse_mode=ParseMode.HTML, quote=True,
+        )
+    except Exception:
+        logger.exception("Force-join verification toggle failed")
+        await message.reply_text(
+            "<pre>⚠️ Fᴏʀᴄᴇ Jᴏɪɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ.</pre>",
+            parse_mode=ParseMode.HTML, quote=True,
+        )
+
+
+@bot.on_message(filters.command("onverify", case_sensitive=False))
+async def on_verify_command(_: Client, message: Message) -> None:
+    await set_force_join_verification(message, True)
+
+
+@bot.on_message(filters.command("offverify", case_sensitive=False))
+async def off_verify_command(_: Client, message: Message) -> None:
+    await set_force_join_verification(message, False)
 
 
 @bot.on_message(filters.command("addforce", case_sensitive=False))
