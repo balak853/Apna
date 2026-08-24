@@ -500,28 +500,65 @@ def force_join_prompt(documents: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def force_member_status_name(status: Any) -> str:
+    return str(status).lower().rsplit(".", 1)[-1]
+
+
+def is_force_bot_admin(status: Any) -> bool:
+    return status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR} or force_member_status_name(status) in {
+        "owner",
+        "creator",
+        "administrator",
+    }
+
+
+def is_force_join_member(status: Any) -> bool:
+    return status in {
+        ChatMemberStatus.OWNER,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.MEMBER,
+    } or force_member_status_name(status) in {
+        "owner",
+        "creator",
+        "administrator",
+        "member",
+    }
+
+
 async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
     try:
         documents = await asyncio.to_thread(lambda: list(force_join.find({})))
     except PyMongoError:
         logger.exception("Force-join collection read failed")
         return None
+
     missing: list[dict[str, Any]] = []
     for document in documents:
         chat_id = document.get("chat_id")
         if chat_id in (None, ""):
             continue
         try:
+            bot_member = await bot.get_chat_member(int(chat_id), "me")
+            bot_status = getattr(bot_member, "status", None)
+            if not is_force_bot_admin(bot_status):
+                logger.error(
+                    "Force-join bot is not administrator for chat %s (status=%s)",
+                    chat_id,
+                    bot_status,
+                )
+                return None
             member = await bot.get_chat_member(int(chat_id), user_id)
-            status = getattr(member, "status", None)
-            status_text = str(status).lower()
-            allowed = status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER} or status_text in {
-                "owner", "creator", "administrator", "member", "chattype.member"
-            }
-            if not allowed:
+            user_status = getattr(member, "status", None)
+            if not is_force_join_member(user_status):
+                # OWNER/CREATOR, ADMINISTRATOR, and MEMBER pass.
+                # LEFT, BANNED, and RESTRICTED remain blocked.
                 missing.append(document)
         except Exception:
-            logger.warning("Force-join membership check skipped for chat %s", chat_id)
+            logger.exception(
+                "Force-join membership check failed for chat %s",
+                chat_id,
+            )
+            return None
     return missing
 
 
@@ -1880,18 +1917,34 @@ async def add_force_command(_: Client, message: Message) -> None:
         try:
             bot_member = await bot.get_chat_member(chat_id, "me")
             status = getattr(bot_member, "status", None)
-            bot_is_admin = status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR} or str(status).lower() in {"owner", "creator", "administrator", "chattype.administrator"}
+            bot_is_admin = is_force_bot_admin(status)
         except Exception:
+            logger.exception("Force-join bot-admin check failed for chat %s", chat_id)
             bot_is_admin = False
         title = str(getattr(chat, "title", None) or getattr(chat, "username", None) or chat_id)
         if not bot_is_admin:
             username = str(getattr(chat, "username", "") or "").strip().lstrip("@")
+            public_link = f"https://t.me/{username}" if username else None
+            stored_link = str(getattr(chat, "invite_link", "") or "").strip() or public_link or ""
+            document = {
+                "chat_id": chat_id,
+                "chat_type": chat_type,
+                "title": title,
+                "invite_link": stored_link,
+                "added_by": int(message.from_user.id),
+                "bot_is_admin": False,
+                "created_at": utc_now(),
+            }
+            try:
+                await asyncio.to_thread(force_join.update_one, {"chat_id": chat_id}, {"$set": document}, upsert=True)
+            except PyMongoError:
+                logger.exception("Force-join invalid-admin record save failed for chat %s", chat_id)
             buttons = [[InlineKeyboardButton("👑 Mᴀᴋᴇ Mᴇ Aᴅᴍɪɴ", callback_data=f"force_admin:{chat_id}")]]
-            if username:
-                buttons.insert(0, [InlineKeyboardButton("📢 Oᴘᴇɴ Cʜᴀᴛ", url=f"https://t.me/{username}")])
+            if public_link:
+                buttons.insert(0, [InlineKeyboardButton("📢 Oᴘᴇɴ Cʜᴀᴛ", url=public_link)])
             await message.reply_text(
                 "<pre>╭━━━━━━━━━━━━━━━━━━━━━━━╮\n│  ⚠️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Nᴏᴛ Aᴅᴅᴇᴅ\n╰━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
-                f"├─ 📢 Tʏᴘᴇ : {html.escape(chat_type)}\n├─ 🆔 Cʜᴀᴛ Iᴅ : {chat_id}\n├─ 👑 Aᴅᴍɪɴ : Nᴏ\n└─ 🔗 Lɪɴᴋ : Nᴏᴛ Aᴠᴀɪʟᴀʙʟᴇ</pre>",
+                f"├─ 📢 Tʏᴘᴇ : {html.escape(chat_type)}\n├─ 🆔 Cʜᴀᴛ Iᴅ : {chat_id}\n├─ 👑 Aᴅᴍɪɴ : Nᴏ\n└─ 🔗 Lɪɴᴋ : {html.escape(stored_link, quote=True) if stored_link else 'Nᴏᴛ Aᴠᴀɪʟᴀʙʟᴇ'}</pre>",
                 parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons), quote=True,
             )
             return
