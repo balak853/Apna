@@ -120,16 +120,18 @@ class TelegramBotApiError(RuntimeError):
         self.retry_after = retry_after
 
 
-async def telegram_bot_api(method: str, payload: dict[str, Any]) -> Any:
+async def telegram_bot_api(
+    method: str,
+    payload: dict[str, Any],
+    files: dict[str, Any] | None = None,
+) -> Any:
     token = str(CONFIG.get("bot_token") or "").strip()
     if not token:
         raise TelegramBotApiError(0, "Telegram bot token is not configured")
     try:
         async with httpx.AsyncClient(timeout=LIKE_TIMEOUT) as client:
-            response = await client.post(
-                f"https://api.telegram.org/bot{token}/{method}",
-                json=payload,
-            )
+            request = {"data": payload, "files": files} if files else {"json": payload}
+            response = await client.post(f"https://api.telegram.org/bot{token}/{method}", **request)
             body = response.json()
     except httpx.HTTPError as error:
         raise TelegramBotApiError(0, f"Telegram network error: {type(error).__name__}") from None
@@ -1796,15 +1798,24 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
             f"♾️<b>Rᴇᴍᴀɪɴɪɴɢ DAY'S: {remaining_days} 💝</b>"
         )
         try:
-            await telegram_bot_api(
-                "sendPhoto",
-                {
-                    "chat_id": AUTOLIKE_CHAT_ID,
-                    "photo": PRIMARY_BANNER_API_URL.format(uid=uid),
-                    "caption": caption,
-                    "parse_mode": "HTML",
-                },
-            )
+            if not AUTOLIKE_BANNER_PATH.is_file():
+                raise FileNotFoundError("AutoLike banner asset is missing")
+            with AUTOLIKE_BANNER_PATH.open("rb") as banner_file:
+                await telegram_bot_api(
+                    "sendPhoto",
+                    {
+                        "chat_id": AUTOLIKE_CHAT_ID,
+                        "caption": caption,
+                        "parse_mode": "HTML",
+                    },
+                    files={
+                        "photo": (
+                            AUTOLIKE_BANNER_PATH.name,
+                            banner_file,
+                            "image/png",
+                        )
+                    },
+                )
         except Exception:
             logger.exception("AutoLike banner send failed for UID %s", uid)
             try:
