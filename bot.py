@@ -1796,16 +1796,17 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
             f"♾️<b>Rᴇᴍᴀɪɴɪɴɢ DAY'S: {remaining_days} 💝</b>"
         )
         try:
-            if not AUTOLIKE_BANNER_PATH.is_file():
-                raise FileNotFoundError("AutoLike banner asset is missing")
-            await bot.send_photo(
-                chat_id=AUTOLIKE_CHAT_ID,
-                photo=str(AUTOLIKE_BANNER_PATH),
-                caption=caption,
-                parse_mode=ParseMode.HTML,
+            await telegram_bot_api(
+                "sendPhoto",
+                {
+                    "chat_id": AUTOLIKE_CHAT_ID,
+                    "photo": PRIMARY_BANNER_API_URL.format(uid=uid),
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                },
             )
         except Exception:
-            logger.exception("AutoLike fixed banner send failed for UID %s", uid)
+            logger.exception("AutoLike banner send failed for UID %s", uid)
             try:
                 await telegram_bot_api(
                     "sendMessage",
