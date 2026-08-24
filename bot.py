@@ -22,6 +22,7 @@ from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 from pyrogram import Client, filters
+from pyrogram.errors import UserNotParticipant
 from pyrogram.enums import ChatMemberStatus, ChatMembersFilter, ChatType, ParseMode
 from pyrogram.types import (
     CallbackQuery,
