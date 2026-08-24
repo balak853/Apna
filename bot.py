@@ -3133,6 +3133,19 @@ async def vip_command(_: Client, message: Message) -> None:
                 logger.warning("Could not delete VIP processing message")
 
 
+@bot.on_message(filters.command("runnow", case_sensitive=False))
+async def runnow_command(_: Client, message: Message) -> None:
+    try:
+        status_print("COMMAND RECEIVED: /runnow")
+        if message.from_user is None or int(message.from_user.id) != int(CONFIG["admin_id"]):
+            return
+        await message.reply_text("🚀 AᴜᴛᴏLɪᴋᴇ Rᴜɴ Sᴛᴀʀᴛᴇᴅ...", quote=True)
+        asyncio.create_task(run_autolike_once())
+    except Exception:
+        logger.exception("runnow command failed")
+        await message.reply_text("⚠️ AᴜᴛᴏLɪᴋᴇ Rᴜɴ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Sᴛᴀʀᴛᴇᴅ.", quote=True)
+
+
 @bot.on_message(filters.command("addvip"))
 async def add_vip_command(_: Client, message: Message) -> None:
     try:
