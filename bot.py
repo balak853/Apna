@@ -1186,6 +1186,8 @@ def configured_like_apis(config: dict[str, Any], mode: str) -> list[tuple[str, s
         names = ["like_api_2"]
     elif mode == "3":
         names = ["like_api_3"]
+    elif mode.startswith("custom_api_") and mode.removeprefix("custom_api_").isdigit():
+        names = []
     else:
         names = ["like_api", "like_api_1", "like_api_2", "like_api_3"]
     configured: list[tuple[str, str]] = [
@@ -1195,15 +1197,23 @@ def configured_like_apis(config: dict[str, Any], mode: str) -> list[tuple[str, s
         and isinstance(config.get(name), str)
         and str(config[name]).startswith(("http://", "https://"))
     ]
-    if mode == "all":
-        dynamic_apis = config.get("like_apis", [])
-        if isinstance(dynamic_apis, list):
+    dynamic_apis = config.get("like_apis", [])
+    if isinstance(dynamic_apis, list):
+        if mode == "all":
             configured.extend(
                 (f"custom_api_{index}", str(api_url))
                 for index, api_url in enumerate(dynamic_apis, start=1)
                 if isinstance(api_url, str)
                 and api_url.startswith(("http://", "https://"))
             )
+        elif mode.startswith("custom_api_"):
+            index_text = mode.removeprefix("custom_api_")
+            if index_text.isdigit():
+                index = int(index_text)
+                if 1 <= index <= len(dynamic_apis):
+                    api_url = dynamic_apis[index - 1]
+                    if isinstance(api_url, str) and api_url.startswith(("http://", "https://")):
+                        configured.append((mode, api_url))
 
     unique: list[tuple[str, str]] = []
     seen_urls: set[str] = set()
@@ -2581,13 +2591,28 @@ async def set_api_command(_: Client, message: Message) -> None:
         if not await sync_group(message):
             return
         arguments = command_arguments(message)
-        if len(arguments) != 1 or arguments[0] not in {"1", "2", "3", "all"}:
+        mode = ""
+        if len(arguments) == 1 and arguments[0] in {"1", "2", "3", "all"}:
+            mode = arguments[0]
+        elif (
+            len(arguments) == 2
+            and arguments[0].lower() == "custom_api"
+            and arguments[1].isdigit()
+            and int(arguments[1]) > 0
+        ):
+            mode = f"custom_api_{int(arguments[1])}"
+        elif (
+            len(arguments) == 1
+            and re.fullmatch(r"custom_api_[1-9][0-9]*", arguments[0].lower())
+        ):
+            mode = arguments[0].lower()
+        if not mode:
             await message.reply_text(
-                "▸ 𝗨sᴀɢᴇ: /setapi 1, /setapi 2, /setapi 3, ᴏʀ /setapi all",
+                "▸ 𝗨sᴀɢᴇ: /setapi 1, /setapi 2, /setapi 3, /setapi all\n"
+                "▸ 𝗖ᴜsᴛᴏᴍ: /setapi custom_api 1",
                 quote=True,
             )
             return
-        mode = arguments[0]
         api_config = await get_api_configuration()
         selected = configured_like_apis(api_config, mode)
         if not selected:
