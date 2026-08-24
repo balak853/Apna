@@ -2915,6 +2915,70 @@ async def disable_command(_: Client, message: Message) -> None:
         logger.exception("disable command failed")
 
 
+@bot.on_message(filters.command("active", case_sensitive=False))
+async def active_command(_: Client, message: Message) -> None:
+    if not is_group_message(message):
+        return
+    try:
+        if not await sync_group(message):
+            return
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if not group_member_is_admin(member):
+            return
+
+        arguments = command_arguments(message)
+        if len(arguments) != 1:
+            await message.reply_text(
+                "▸ Uѕᴀɢᴇ: /active <command_name>\n"
+                "E.xᴀᴍᴘʟᴇ: /active like",
+                quote=True,
+            )
+            return
+        command = arguments[0].lstrip("/").lower()
+        if command not in DISABLEABLE_COMMANDS:
+            await message.reply_text(
+                f"⚠️ Tʜɪs Cᴏᴍᴍᴀɴᴅ Cᴀɴɴᴏᴛ Bᴇ Aᴄᴛɪᴠᴀᴛᴇᴅ: /{html.escape(command)}",
+                quote=True,
+            )
+            return
+
+        owner_name = "N/A"
+        async for admin_member in bot.get_chat_members(
+            message.chat.id,
+            filter=ChatMembersFilter.ADMINISTRATORS,
+        ):
+            status = str(getattr(admin_member, "status", "")).lower().rsplit(".", 1)[-1]
+            if status in {"creator", "owner"}:
+                owner_name = group_member_display_name(admin_member)
+                break
+        group_name = getattr(message.chat, "title", None) or str(message.chat.id)
+        await asyncio.to_thread(
+            disabled_commands.update_one,
+            {"chat_id": int(message.chat.id), "command": command},
+            {
+                "$set": {
+                    "chat_id": int(message.chat.id),
+                    "command": command,
+                    "enabled": True,
+                    "updated_at": utc_now(),
+                }
+            },
+            upsert=True,
+        )
+        await message.reply_text(
+            "✅ Cᴏᴍᴍᴀɴᴅ Aᴄᴛɪᴠᴀᴛᴇᴅ/ALREADY ACTIVATED \n"
+            "⚡ Cᴏᴍᴍᴀɴᴅ :\n\n"
+            f"/{command}\n\n"
+            f"📍 Gʀᴏᴜᴘ : {html.escape(str(group_name), quote=True)}\n"
+            f"👑 Oᴡɴᴇʀ : {html.escape(str(owner_name), quote=True)}\n"
+            "🔓 Sᴛᴀᴛᴜs : Aᴄᴛɪᴠᴇ\n"
+            "✅ Tʜɪs Cᴏᴍᴍᴀɴᴅ ɪs ɴᴏᴡ Aᴄᴛɪᴠᴇ Fᴏʀ Tʜɪs Gʀᴏᴜᴘ.",
+            quote=True,
+        )
+    except Exception:
+        logger.exception("active command failed")
+
+
 @bot.on_message(filters.command("bancheck", case_sensitive=False))
 async def bancheck_command(_: Client, message: Message) -> None:
     processing: Message | None = None
