@@ -2609,7 +2609,7 @@ async def set_api_command(_: Client, message: Message) -> None:
         if not mode:
             await message.reply_text(
                 "▸ 𝗨sᴀɢᴇ: /setapi 1, /setapi 2, /setapi 3, /setapi all\n"
-                "▸ 𝗖ᴜsᴛᴏᴍ: /setapi custom_api 1",
+                "▸ 𝗖ᴜsᴛᴏᴍ: /setapi custom_api 1, /setapi custom_api 2, ᴏʀ /setapi custom_api 3",
                 quote=True,
             )
             return
@@ -2619,7 +2619,7 @@ async def set_api_command(_: Client, message: Message) -> None:
             if mode.startswith("custom_api_"):
                 await message.reply_text(
                     "⚠️ THIS API IS NOT CONFIGURED IN DATABASE.\n"
-                    "Please first set Like API via /addlikeapi.",
+                    "Please first set Like API via /addlikeapi <url>.",
                     quote=True,
                 )
             else:
@@ -2641,7 +2641,8 @@ async def set_api_command(_: Client, message: Message) -> None:
     except Exception:
         logger.exception("setapi command failed")
         await message.reply_text(
-            "⚠️ Cᴏᴜʟᴅ Nᴏᴛ Uᴘᴅᴀᴛᴇ Tʜᴇ Lɪᴋᴇ 𝗔ᴘɪ Mᴏᴅᴇ.",
+            "⚠️ Cᴏᴜʟᴅ Nᴏᴛ Cʜᴇᴄᴋ Oʀ Uᴘᴅᴀᴛᴇ Tʜᴇ Lɪᴋᴇ 𝗔ᴘɪ Mᴏᴅᴇ.\n"
+            "Please verify the database and try again.",
             quote=True,
         )
 
