@@ -513,7 +513,10 @@ def is_force_bot_admin(status: Any) -> bool:
     }
 
 
-def is_force_join_member(status: Any) -> bool:
+def is_force_join_member(member: Any) -> bool:
+    status = getattr(member, "status", None)
+    if force_member_status_name(status) == "restricted":
+        return bool(getattr(member, "is_member", False))
     return status in {
         ChatMemberStatus.OWNER,
         ChatMemberStatus.ADMINISTRATOR,
@@ -549,11 +552,13 @@ async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
                 )
                 return None
             member = await bot.get_chat_member(int(chat_id), user_id)
-            user_status = getattr(member, "status", None)
-            if not is_force_join_member(user_status):
+            if not is_force_join_member(member):
                 # OWNER/CREATOR, ADMINISTRATOR, and MEMBER pass.
-                # LEFT, BANNED, and RESTRICTED remain blocked.
+                # RESTRICTED passes only while the user is still a member.
                 missing.append(document)
+        except UserNotParticipant:
+            # Telegram uses this exception when the user is not a member.
+            missing.append(document)
         except Exception:
             logger.exception(
                 "Force-join membership check failed for chat %s",
