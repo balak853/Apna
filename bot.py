@@ -1640,6 +1640,227 @@ def daily_limit_message(document: dict[str, Any]) -> str:
     )
 
 
+
+AUTOLIKE_CHAT_ID = -1004360282377
+_autolike_process_lock = threading.Lock()
+
+
+def autolike_run_date(now: datetime | None = None) -> str:
+    """Return the IST calendar date whose 04:00 run is being considered."""
+    current = (now or ist_now()).astimezone(IST)
+    if current.hour < 4:
+        current -= timedelta(days=1)
+    return current.date().isoformat()
+
+
+def claim_autolike_daily_run_sync(run_date: str) -> bool:
+    """Atomically claim one daily run across restarts and instances."""
+    now = utc_now()
+    lock_until = now + timedelta(hours=6)
+    try:
+        result = settings.update_one(
+            {
+                "_id": "autolike_daily_run",
+                "run_date": {"$ne": run_date},
+            },
+            {
+                "$set": {
+                    "run_date": run_date,
+                    "started_at": now,
+                    "lock_until": lock_until,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"_id": "autolike_daily_run"},
+            },
+            upsert=True,
+        )
+        return result.modified_count == 1 or result.upserted_id is not None
+    except PyMongoError:
+        logger.exception("AutoLike daily run lock acquisition failed")
+        return False
+
+
+def complete_autolike_daily_run_sync(run_date: str) -> None:
+    try:
+        settings.update_one(
+            {"_id": "autolike_daily_run", "run_date": run_date},
+            {"$set": {"completed_at": utc_now(), "lock_until": utc_now()}},
+        )
+    except PyMongoError:
+        logger.exception("AutoLike daily run completion state save failed")
+
+
+def vip_caption_value(value: Any, fallback: str = "N/A") -> str:
+    return html.escape(fallback if value in (None, "") else str(value), quote=True)
+
+
+async def send_autolike_expired(uid: str) -> None:
+    try:
+        await telegram_bot_api(
+            "sendMessage",
+            {
+                "chat_id": AUTOLIKE_CHAT_ID,
+                "text": (
+                    f"🏁<b>UID {vip_caption_value(uid)} Tᴀʀɢᴇᴛ Lɪᴋᴇꜱ "
+                    "Cᴏᴍᴘʟᴇᴛᴇᴅ & Rᴇᴍᴏᴠᴇᴅ Fʀᴏᴍ AᴜᴛᴏLɪᴋᴇ.</b>"
+                ),
+                "parse_mode": "HTML",
+            },
+        )
+    except Exception:
+        logger.exception("Expired AutoLike notification failed for uid %s", uid)
+
+
+async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any]) -> None:
+    uid = str(record.get("uid") or "")
+    region = str(record.get("region") or "").upper()
+    if not uid or not region:
+        logger.warning("Skipping malformed AutoLike record")
+        return
+    logger.info("PROCESSING UID: %s", uid)
+
+    try:
+        payloads = await fetch_vip_player_payloads(uid)
+        player_name = vip_player_value(
+            payloads,
+            {"nickname", "playername", "playernickname", "name", "username"},
+            "Not Available",
+        )
+        level = vip_player_value(payloads, {"level", "playerlevel"}, "Not Available")
+        before = vip_number(
+            vip_player_value(
+                payloads,
+                {"likes", "like", "likecount", "totallikes", "liked"},
+                0,
+            ),
+            0,
+        )
+        mode = str(api_config.get("active_like_api") or "all")
+        selected_apis = configured_like_apis(api_config, mode)
+        if not selected_apis:
+            logger.warning("No configured Like APIs for AutoLike UID %s", uid)
+            return
+
+        results = await asyncio.gather(
+            *(call_like_api(api_name, template, uid, region) for api_name, template in selected_apis),
+            return_exceptions=True,
+        )
+        safe_results: list[dict[str, Any]] = []
+        for index, item in enumerate(results, start=1):
+            if isinstance(item, Exception):
+                logger.error("AutoLike API %s failed for UID %s: %s", index, uid, type(item).__name__)
+                safe_results.append({"success": False, "already_sent": False, "given": 0})
+            else:
+                safe_results.append(item)
+        combined = combine_api_results(safe_results)
+        if not combined.get("success"):
+            logger.warning("UID FAILED OR ALREADY PROCESSED: %s", uid)
+            return
+
+        given = vip_number(combined.get("given"), 0)
+        after = vip_number(combined.get("after"), before + given)
+        expires_at = record.get("expires_at")
+        remaining_days = remaining_vip_days(expires_at) if isinstance(expires_at, datetime) else 0
+        caption = (
+            "✅<b>Aᴜᴛᴏʟɪᴋᴇs Sᴇɴᴛ Sᴜᴄᴄᴇꜱꜰᴜʟʟʏ 🥳</b>\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            f"👤<b>Pʟᴀʏᴇʀ: {vip_caption_value(player_name)}</b>\n"
+            f"📊<b>Lᴇᴠᴇʟ: {vip_caption_value(level)}</b>\n"
+            f"🌍<b>Rᴇɢɪᴏɴ: {vip_caption_value(region)}</b>\n"
+            f"🆔<b>UID: {vip_caption_value(uid)}</b>\n"
+            f"❤️<b>Bᴇғᴏʀᴇ: {before}</b>\n"
+            f"💝<b>Aꜰᴛᴇʀ: {after}</b>\n"
+            f"🤖<b>Gɪᴠᴇɴ Bʏ Bᴏᴛ: {given}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            f"♾️<b>Rᴇᴍᴀɪɴɪɴɢ DAY'S: {remaining_days} 💝</b>"
+        )
+        image_url = PRIMARY_BANNER_API_URL.format(uid=uid)
+        try:
+            await telegram_bot_api(
+                "sendPhoto",
+                {"chat_id": AUTOLIKE_CHAT_ID, "photo": image_url, "caption": caption, "parse_mode": "HTML"},
+            )
+        except Exception:
+            logger.exception("AutoLike image/caption send failed for UID %s", uid)
+        logger.info("UID SUCCESS: %s", uid)
+    except Exception:
+        logger.exception("AutoLike UID processing failed for %s", uid)
+
+
+async def run_autolike_once() -> None:
+    run_date = autolike_run_date()
+    if not _autolike_process_lock.acquire(blocking=False):
+        logger.warning("AutoLike run skipped because another run is active")
+        return
+    claimed = False
+    try:
+        claimed = await asyncio.to_thread(claim_autolike_daily_run_sync, run_date)
+        if not claimed:
+            logger.info("AutoLike run already claimed for IST date %s", run_date)
+            return
+        logger.info("AUTO LIKE RUN STARTED: %s IST", run_date)
+        now = utc_now()
+        expired = await asyncio.to_thread(
+            lambda: list(autolike.find({"expires_at": {"$lte": now}}))
+        )
+        active = await asyncio.to_thread(
+            lambda: list(autolike.find({"expires_at": {"$gt": now}}).sort("uid", ASCENDING))
+        )
+        logger.info("ACTIVE UID COUNT: %s", len(active))
+        try:
+            await telegram_bot_api(
+                "sendMessage",
+                {
+                    "chat_id": AUTOLIKE_CHAT_ID,
+                    "text": f"🚀<b>AᴜᴛᴏLɪᴋᴇ Sᴛᴀʀᴛᴇᴅ...</b>\n📊 Tᴏᴛᴀʟ UIDꜱ: {len(active)}",
+                    "parse_mode": "HTML",
+                },
+            )
+        except Exception:
+            logger.exception("AutoLike start message failed")
+
+        for record in expired:
+            uid = str(record.get("uid") or "")
+            logger.info("UID EXPIRED: %s", uid)
+            await send_autolike_expired(uid)
+            try:
+                await asyncio.to_thread(autolike.delete_one, {"_id": record.get("_id")})
+            except PyMongoError:
+                logger.exception("Expired AutoLike removal failed for uid %s", uid)
+
+        api_config = await get_api_configuration()
+        for record in active:
+            await process_autolike_uid(record, api_config)
+        logger.info("AUTO LIKE RUN COMPLETED: %s IST", run_date)
+    except Exception:
+        logger.exception("AutoLike daily run failed safely")
+    finally:
+        if claimed:
+            await asyncio.to_thread(complete_autolike_daily_run_sync, run_date)
+        _autolike_process_lock.release()
+
+
+async def autolike_scheduler_loop() -> None:
+    status_print("AUTO LIKE SCHEDULER STARTED")
+    while True:
+        now = utc_now()
+        next_run = next_daily_reset(now)
+        logger.info("NEXT AUTO LIKE RUN: %s IST", next_run.astimezone(IST).isoformat())
+        await asyncio.sleep(max(0.1, (next_run - now).total_seconds()))
+        await run_autolike_once()
+
+
+def start_autolike_scheduler() -> None:
+    def runner() -> None:
+        asyncio.run(autolike_scheduler_loop())
+
+    threading.Thread(
+        target=runner,
+        name="autolike-scheduler-4am-ist",
+        daemon=True,
+    ).start()
+
+
 async def daily_reset_loop() -> None:
     status_print("DAILY RESET WORKER STARTED: 4:00 AM IST")
     while True:
@@ -2970,6 +3191,7 @@ def main() -> None:
     initialize_database()
     start_health_server()
     start_daily_reset_worker()
+    start_autolike_scheduler()
     status_print("BOT SUCCESSFULLY STARTED")
     try:
         run_persistent_bot()
