@@ -1774,8 +1774,8 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
             ),
             0,
         )
-        mode = str(api_config.get("active_like_api") or "all")
-        selected_apis = configured_like_apis(api_config, mode)
+        # AutoLike always sends one request to every configured Like API.
+        selected_apis = configured_like_apis(api_config, "all")
         if not selected_apis:
             logger.warning("No configured Like APIs for AutoLike UID %s", uid)
             return
