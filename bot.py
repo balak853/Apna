@@ -2616,10 +2616,17 @@ async def set_api_command(_: Client, message: Message) -> None:
         api_config = await get_api_configuration()
         selected = configured_like_apis(api_config, mode)
         if not selected:
-            await message.reply_text(
-                f"⚠️ Nᴏ Lɪᴋᴇ 𝗔ᴘɪ Is Cᴏɴғɪɢᴜʀᴇᴅ Fᴏʀ Mᴏᴅᴇ {mode}.",
-                quote=True,
-            )
+            if mode.startswith("custom_api_"):
+                await message.reply_text(
+                    "⚠️ THIS API IS NOT CONFIGURED IN DATABASE.\n"
+                    "Please first set Like API via /addlikeapi.",
+                    quote=True,
+                )
+            else:
+                await message.reply_text(
+                    f"⚠️ Nᴏ Lɪᴋᴇ 𝗔ᴘɪ Is Cᴏɴғɪɢᴜʀᴇᴅ Fᴏʀ Mᴏᴅᴇ {mode}.",
+                    quote=True,
+                )
             return
         await asyncio.to_thread(
             apis.update_one,
