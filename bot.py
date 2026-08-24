@@ -530,45 +530,51 @@ def is_force_join_member(member: Any) -> bool:
 
 
 async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
-    try:
-        documents = await asyncio.to_thread(lambda: list(force_join.find({})))
-    except PyMongoError:
-        logger.exception("Force-join collection read failed")
-        return None
+      try:
+          documents = await asyncio.to_thread(lambda: list(force_join.find({})))
+      except PyMongoError:
+          logger.exception("Force-join collection read failed")
+          return None
 
-    missing: list[dict[str, Any]] = []
-    for document in documents:
-        chat_id = document.get("chat_id")
-        if chat_id in (None, ""):
-            continue
-        try:
-            bot_member = await bot.get_chat_member(int(chat_id), "me")
-            bot_status = getattr(bot_member, "status", None)
-            if not is_force_bot_admin(bot_status):
-                logger.error(
-                    "Force-join bot is not administrator for chat %s (status=%s)",
-                    chat_id,
-                    bot_status,
-                )
-                return None
-            member = await bot.get_chat_member(int(chat_id), user_id)
-            if not is_force_join_member(member):
-                # OWNER/CREATOR, ADMINISTRATOR, and MEMBER pass.
-                # RESTRICTED passes only while the user is still a member.
-                missing.append(document)
-        except UserNotParticipant:
-            # Telegram uses this exception when the user is not a member.
-            missing.append(document)
-        except Exception:
-            logger.exception(
-                "Force-join membership check failed for chat %s",
-                chat_id,
-            )
-            return None
-    return missing
+      missing: list[dict[str, Any]] = []
+      for document in documents:
+          chat_id = document.get("chat_id")
+          if chat_id in (None, ""):
+              continue
+          try:
+              bot_member = await bot.get_chat_member(int(chat_id), "me")
+              bot_status = getattr(bot_member, "status", None)
+          except Exception:
+              logger.exception("Force-join bot membership check failed for chat %s", chat_id)
+              return None
+
+          if not is_force_bot_admin(bot_status):
+              logger.error(
+                  "Force-join bot is not administrator for chat %s (status=%s)",
+                  chat_id,
+                  bot_status,
+              )
+              return None
+
+          try:
+              member = await bot.get_chat_member(int(chat_id), user_id)
+              if not is_force_join_member(member):
+                  # OWNER/CREATOR, ADMINISTRATOR, and MEMBER pass.
+                  # RESTRICTED passes only while the user is still a member.
+                  missing.append(document)
+          except UserNotParticipant:
+              # Telegram uses this exception when the user is not a member.
+              missing.append(document)
+          except Exception:
+              logger.exception(
+                  "Force-join membership check failed for chat %s",
+                  chat_id,
+              )
+              return None
+      return missing
 
 
-async def command_access_allowed(message: Message) -> bool:
+    async def command_access_allowed(message: Message) -> bool:
     user_id = getattr(getattr(message, "from_user", None), "id", None)
     if is_configured_admin(user_id):
         return True
@@ -1952,6 +1958,17 @@ async def add_force_command(_: Client, message: Message) -> None:
                 "<pre>╭━━━━━━━━━━━━━━━━━━━━━━━╮\n│  ⚠️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Nᴏᴛ Aᴅᴅᴇᴅ\n╰━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
                 f"├─ 📢 Tʏᴘᴇ : {html.escape(chat_type)}\n├─ 🆔 Cʜᴀᴛ Iᴅ : {chat_id}\n├─ 👑 Aᴅᴍɪɴ : Nᴏ\n└─ 🔗 Lɪɴᴋ : {html.escape(stored_link, quote=True) if stored_link else 'Nᴏᴛ Aᴠᴀɪʟᴀʙʟᴇ'}</pre>",
                 parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons), quote=True,
+            )
+            return
+        existing_document = await asyncio.to_thread(
+            force_join.find_one,
+            {"chat_id": chat_id},
+        )
+        if existing_document and existing_document.get("bot_is_admin") and force_join_link(existing_document):
+            await message.reply_text(
+                "<pre>ℹ️ Fᴏʀᴄᴇ Tᴏ Jᴏɪɴ Aʟʀᴇᴀᴅʏ Aᴅᴅᴇᴅ Fᴏʀ Tʜɪs Cʜᴀᴛ.</pre>",
+                parse_mode=ParseMode.HTML,
+                quote=True,
             )
             return
         invite_link = await force_chat_invite_link(chat, chat_id)
