@@ -972,7 +972,19 @@ def normalize_api_response(
     status_failure = (
         str(explicit_failure).lower() in {"true", "1", "yes"}
         or status_code >= 400
-        or any(word in normalized_text for word in ("failed", "failure", "error"))
+        or any(
+            word in normalized_text
+            for word in (
+                "failed",
+                "failure",
+                "error",
+                "expired",
+                "invalid",
+                "not_sent",
+                "could_not",
+                "unable",
+            )
+        )
     )
     success = not already_sent and not status_failure and (
         status_success
@@ -1662,7 +1674,14 @@ def claim_autolike_daily_run_sync(run_date: str) -> bool:
         result = settings.update_one(
             {
                 "_id": "autolike_daily_run",
-                "run_date": {"$ne": run_date},
+                "$or": [
+                    {"run_date": {"$ne": run_date}},
+                    {
+                        "run_date": run_date,
+                        "completed_at": {"$exists": False},
+                        "lock_until": {"$lte": now},
+                    },
+                ],
             },
             {
                 "$set": {
@@ -1671,6 +1690,7 @@ def claim_autolike_daily_run_sync(run_date: str) -> bool:
                     "lock_until": lock_until,
                     "updated_at": now,
                 },
+                "$unset": {"completed_at": ""},
                 "$setOnInsert": {"_id": "autolike_daily_run"},
             },
             upsert=True,
