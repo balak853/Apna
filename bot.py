@@ -2191,7 +2191,12 @@ def bancheck_player_field(payloads: list[Any], aliases: set[str], fallback: Any 
     return profile_text(value) if value not in (None, "") else str(fallback)
 
 
-def build_bancheck_output(uid: str, ban_payload: dict[str, Any], player_payloads: list[Any]) -> str:
+def build_bancheck_output(
+    uid: str,
+    ban_payload: dict[str, Any],
+    player_payloads: list[Any],
+    warnings: list[str] | None = None,
+) -> str:
     player_name = ban_payload.get("nickname") or bancheck_player_field(
         player_payloads, {"nickname", "playername", "playernickname", "name", "username"}
     )
@@ -2212,6 +2217,10 @@ def build_bancheck_output(uid: str, ban_payload: dict[str, Any], player_payloads
     safe_uid = html.escape(str(resolved_uid), quote=True)
     safe_created = html.escape(created_text, quote=True)
     safe_duration = html.escape(duration, quote=True)
+    warning_items = warnings or ["Nᴏ Wᴀʀɴɪɴɢs — Dᴀᴛᴀ Vᴇʀɪғɪᴇᴅ"]
+    warning_section = "<b>├── ⚠️ Wᴀʀɴɪɴɢs</b>\n" + "\n".join(
+        f"<b>│   {html.escape(str(item), quote=True)}</b>" for item in warning_items
+    )
     return (
         "<b>╭━━━ 🛡 Bᴀɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ ━━━╮</b>\n"
         "<b>│</b>\n"
@@ -2227,6 +2236,7 @@ def build_bancheck_output(uid: str, ban_payload: dict[str, Any], player_payloads
         "<b>│   Uɪᴅ ɪs ᴄᴜʀʀᴇɴᴛʟʏ ғʟᴀɢɢᴇᴅ</b>\n"
         "<b>│   ᴀs ʙᴀɴɴᴇᴅ.</b>\n"
         "<b>│</b>\n"
+        f"{warning_section}\n"
         "<b>│ 📡 Sᴏᴜʀᴄᴇ : Lɪᴠᴇ API</b>\n"
         "<b>│ 🔐 Nᴇᴠᴇʀ sʜᴀʀᴇ Pᴀssᴡᴏʀᴅ / OTP</b>\n"
         "<b>╰━━━ ⚡ Lɪᴠᴇ Cʜᴇᴄᴋ ━━━╯</b>"
@@ -2239,13 +2249,22 @@ def bancheck_developer_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def build_not_banned_output(uid: str, ban_payload: dict[str, Any], player_payloads: list[Any]) -> str:
+def build_not_banned_output(
+    uid: str,
+    ban_payload: dict[str, Any],
+    player_payloads: list[Any],
+    warnings: list[str] | None = None,
+) -> str:
     player_name = ban_payload.get("nickname") or bancheck_player_field(
         player_payloads, {"nickname", "playername", "playernickname", "name", "username"}
     )
     resolved_uid = ban_payload.get("player_id") or ban_payload.get("uid") or uid
     safe_name = html.escape(str(player_name), quote=True)
     safe_uid = html.escape(str(resolved_uid), quote=True)
+    warning_items = warnings or ["Nᴏ Wᴀʀɴɪɴɢs — Dᴀᴛᴀ Vᴇʀɪғɪᴇᴅ"]
+    warning_section = "<b>├── ⚠️ Wᴀʀɴɪɴɢs</b>\n" + "\n".join(
+        f"<b>│   {html.escape(str(item), quote=True)}</b>" for item in warning_items
+    )
     return (
         "<b>╭━━━ 🛡 Bᴀɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ ━━━╮</b>\n"
         "<b>│</b>\n"
@@ -2258,6 +2277,7 @@ def build_not_banned_output(uid: str, ban_payload: dict[str, Any], player_payloa
         "<b>│   Uɪᴅ ɪs ᴄᴜʀʀᴇɴᴛʟʏ ᴄʟᴇᴀɴ</b>\n"
         "<b>│   ᴀɴᴅ ɴᴏᴛ ғʟᴀɢɢᴇᴅ.</b>\n"
         "<b>│</b>\n"
+        f"{warning_section}\n"
         "<b>│ 📡 Sᴏᴜʀᴄᴇ : Lɪᴠᴇ API</b>\n"
         "<b>│ 🔐 Nᴇᴠᴇʀ sʜᴀʀᴇ Pᴀssᴡᴏʀᴅ / OTP</b>\n"
         "<b>╰━━━ ⚡ Lɪᴠᴇ Cʜᴇᴄᴋ ━━━╯</b>"
@@ -2799,6 +2819,7 @@ async def bancheck_command(_: Client, message: Message) -> None:
             )
             return
         uid = arguments[0]
+        ban_warnings: list[str] = []
         processing = await message.reply_text(
             "<b>⏳Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇꜱᴛ...</b>",
             parse_mode=ParseMode.HTML,
@@ -2809,6 +2830,7 @@ async def bancheck_command(_: Client, message: Message) -> None:
             BAN_CHECK_PRIMARY_URL.format(uid=uid), "Primary ban API"
         )
         if ban_payload is None:
+            ban_warnings.append("⚠️ Pʀɪᴍᴀʀʏ API ғᴀɪʟᴇᴅ — Fᴀʟʟʙᴀᴄᴋ API ᴜsᴇᴅ")
             ban_payload = await fetch_ban_response(
                 BAN_CHECK_FALLBACK_URL.format(uid=uid), "Fallback ban API"
             )
@@ -2820,6 +2842,13 @@ async def bancheck_command(_: Client, message: Message) -> None:
             fetch_player_info(SECONDARY_PLAYER_INFO_API_URL.format(uid=uid)),
         )
         player_payloads = [payload for payload in player_payloads if payload is not None]
+        if not player_payloads:
+            ban_warnings.append("⚠️ Pʟᴀʏᴇʀ-Iɴғᴏ API ᴅᴀᴛᴀ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ")
+        else:
+            if profile_datetime(player_payloads, {"created", "createddate", "createat", "accountcreated", "accountcreateddate", "creationdate", "registrationdate"}) is None:
+                ban_warnings.append("⚠️ Cʀᴇᴀᴛᴇᴅ ᴅᴀᴛᴇ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ")
+            if profile_datetime(player_payloads, {"accountlastlogin", "lastlogin", "lastloginat", "lastlogindate", "lastloggedin", "lastseen"}) is None:
+                ban_warnings.append("⚠️ Lᴀsᴛ Lᴏɢɪɴ ᴅᴀᴛᴇ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ")
         if processing is not None:
             try:
                 await processing.delete()
@@ -2829,14 +2858,14 @@ async def bancheck_command(_: Client, message: Message) -> None:
 
         if ban_status_is_banned(ban_payload):
             await message.reply_text(
-                build_bancheck_output(uid, ban_payload, player_payloads),
+                build_bancheck_output(uid, ban_payload, player_payloads, ban_warnings),
                 parse_mode=ParseMode.HTML,
                 reply_markup=bancheck_developer_keyboard(),
                 quote=True,
             )
         else:
             await message.reply_text(
-                build_not_banned_output(uid, ban_payload, player_payloads),
+                build_not_banned_output(uid, ban_payload, player_payloads, ban_warnings),
                 parse_mode=ParseMode.HTML,
                 reply_markup=bancheck_developer_keyboard(),
                 quote=True,
