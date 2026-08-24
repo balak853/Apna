@@ -1642,6 +1642,7 @@ def daily_limit_message(document: dict[str, Any]) -> str:
 
 
 AUTOLIKE_CHAT_ID = -1004360282377
+AUTOLIKE_BANNER_PATH = BASE_DIR / "assets" / "rana-autolikes-banner.png"
 _autolike_process_lock = threading.Lock()
 
 
@@ -1774,14 +1775,7 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
             "━━━━━━━━━━━━━━━━━━━\n"
             f"♾️<b>Rᴇᴍᴀɪɴɪɴɢ DAY'S: {remaining_days} 💝</b>"
         )
-        image_url = PRIMARY_BANNER_API_URL.format(uid=uid)
-        try:
-            await telegram_bot_api(
-                "sendPhoto",
-                {"chat_id": AUTOLIKE_CHAT_ID, "photo": image_url, "caption": caption, "parse_mode": "HTML"},
-            )
-        except Exception:
-            logger.exception("AutoLike image/caption send failed for UID %s", uid)
+        try:\n            if not AUTOLIKE_BANNER_PATH.is_file():\n                raise FileNotFoundError("AutoLike banner asset is missing")\n            await bot.send_photo(\n                chat_id=AUTOLIKE_CHAT_ID,\n                photo=str(AUTOLIKE_BANNER_PATH),\n                caption=caption,\n                parse_mode=ParseMode.HTML,\n            )\n        except Exception:\n            logger.exception("AutoLike fixed banner send failed for UID %s", uid)\n            try:\n                await telegram_bot_api(\n                    "sendMessage",\n                    {"chat_id": AUTOLIKE_CHAT_ID, "text": caption, "parse_mode": "HTML"},\n                )\n            except Exception:\n                logger.exception("AutoLike caption fallback failed for UID %s", uid)
         logger.info("UID SUCCESS: %s", uid)
     except Exception:
         logger.exception("AutoLike UID processing failed for %s", uid)
