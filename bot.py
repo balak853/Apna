@@ -112,6 +112,40 @@ logging.basicConfig(
 logger = logging.getLogger("ff-bot2")
 
 
+class TelegramBotApiError(RuntimeError):
+    def __init__(self, error_code: int, description: str, retry_after: int | None = None):
+        super().__init__(description)
+        self.error_code = error_code
+        self.description = description
+        self.retry_after = retry_after
+
+
+async def telegram_bot_api(method: str, payload: dict[str, Any]) -> Any:
+    token = str(CONFIG.get("bot_token") or "").strip()
+    if not token:
+        raise TelegramBotApiError(0, "Telegram bot token is not configured")
+    try:
+        async with httpx.AsyncClient(timeout=LIKE_TIMEOUT) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{token}/{method}",
+                json=payload,
+            )
+            body = response.json()
+    except httpx.HTTPError as error:
+        raise TelegramBotApiError(0, f"Telegram network error: {type(error).__name__}") from None
+    except (ValueError, KeyError):
+        raise TelegramBotApiError(0, "Telegram returned an invalid response") from None
+
+    if not body.get("ok"):
+        parameters = body.get("parameters") or {}
+        raise TelegramBotApiError(
+            int(body.get("error_code") or response.status_code or 0),
+            str(body.get("description") or "Telegram request failed"),
+            parameters.get("retry_after"),
+        )
+    return body.get("result")
+
+
 def status_print(message: str) -> None:
     print(message, flush=True)
 
@@ -542,34 +576,85 @@ async def missing_force_join_chats(user_id: int) -> list[dict[str, Any]] | None:
         if chat_id in (None, ""):
             continue
         try:
-            bot_member = await bot.get_chat_member(int(chat_id), "me")
-            bot_status = getattr(bot_member, "status", None)
+            await telegram_bot_api("getChat", {"chat_id": int(chat_id)})
+            bot_member = await telegram_bot_api(
+                "getChatMember", {"chat_id": int(chat_id), "user_id": "me"}
+            )
+            bot_status = str((bot_member or {}).get("status") or "").lower()
+        except TelegramBotApiError as error:
+            logger.warning(
+                "Force-join bot/chat check unavailable for chat %s: %s",
+                chat_id,
+                error.description,
+            )
+            return None
+        except (KeyError, ValueError) as error:
+            logger.warning(
+                "Force-join bot/chat check unavailable for chat %s: %s",
+                chat_id,
+                type(error).__name__,
+            )
+            return None
         except Exception:
-            logger.exception("Force-join bot membership check failed for chat %s", chat_id)
+            logger.exception("Force-join bot/chat check failed for chat %s", chat_id)
             return None
 
-        if not is_force_bot_admin(bot_status):
-            logger.error(
+        if bot_status not in {"administrator", "creator"}:
+            logger.warning(
                 "Force-join bot is not administrator for chat %s (status=%s)",
                 chat_id,
-                bot_status,
+                bot_status or "unknown",
             )
             return None
 
         try:
-            member = await bot.get_chat_member(int(chat_id), user_id)
-            if not is_force_join_member(member):
-                # OWNER/CREATOR, ADMINISTRATOR, and MEMBER pass.
-                # RESTRICTED passes only while the user is still a member.
-                missing.append(document)
-        except UserNotParticipant:
-            # Telegram uses this exception when the user is not a member.
-            missing.append(document)
-        except Exception:
-            logger.exception(
-                "Force-join membership check failed for chat %s",
-                chat_id,
+            member = await telegram_bot_api(
+                "getChatMember", {"chat_id": int(chat_id), "user_id": int(user_id)}
             )
+            status = str((member or {}).get("status") or "").lower()
+            if status in {"creator", "administrator", "member"}:
+                continue
+            if status == "restricted" and bool((member or {}).get("is_member")):
+                continue
+            missing.append(document)
+        except UserNotParticipant:
+            missing.append(document)
+        except TelegramBotApiError as error:
+            description = error.description.upper()
+            if "USER_NOT_PARTICIPANT" in description or "USER IS NOT A MEMBER" in description:
+                missing.append(document)
+                continue
+            if error.retry_after is not None:
+                logger.warning(
+                    "Force-join check rate-limited for chat %s; retry after %ss",
+                    chat_id,
+                    error.retry_after,
+                )
+            else:
+                logger.warning(
+                    "Force-join membership check unavailable for chat %s: %s",
+                    chat_id,
+                    error.description,
+                )
+            return None
+        except (KeyError, ValueError) as error:
+            logger.warning(
+                "Force-join membership check unavailable for chat %s: %s",
+                chat_id,
+                type(error).__name__,
+            )
+            return None
+        except Exception as error:
+            if type(error).__name__ in {
+                "PeerIdInvalid", "ChatNotFound", "Forbidden", "RPCError", "FloodWait"
+            }:
+                logger.warning(
+                    "Force-join membership check unavailable for chat %s: %s",
+                    chat_id,
+                    type(error).__name__,
+                )
+            else:
+                logger.exception("Force-join membership check failed for chat %s", chat_id)
             return None
     return missing
 
@@ -644,9 +729,16 @@ async def force_chat_invite_link(chat: Any, chat_id: int) -> str | None:
     if existing:
         return existing
     try:
-        return await bot.export_chat_invite_link(chat_id)
+        return await telegram_bot_api("exportChatInviteLink", {"chat_id": chat_id})
+    except TelegramBotApiError as error:
+        logger.warning(
+            "Could not export invite link for force-join chat %s: %s",
+            chat_id,
+            error.description,
+        )
+        return None
     except Exception:
-        logger.warning("Could not export invite link for force-join chat %s", chat_id)
+        logger.exception("Could not export invite link for force-join chat %s", chat_id)
         return None
 
 
@@ -1918,8 +2010,9 @@ async def add_force_command(_: Client, message: Message) -> None:
             await message.reply_text("<pre>⚠️ Iɴᴠᴀʟɪᴅ Cʜᴀᴛ Iᴅ.</pre>", parse_mode=ParseMode.HTML, quote=True)
             return
         try:
-            chat = await bot.get_chat(chat_id)
-        except Exception:
+            chat_data = await telegram_bot_api("getChat", {"chat_id": chat_id})
+            chat = type("TelegramChat", (), chat_data)()
+        except (TelegramBotApiError, KeyError, ValueError):
             await message.reply_text("<pre>⚠️ Cʜᴀᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Fᴏᴜɴᴅ Oʀ Iѕ Nᴏᴛ Aᴄᴄᴇssɪʙʟᴇ Bʏ Tʜᴇ Bᴏᴛ.</pre>", parse_mode=ParseMode.HTML, quote=True)
             return
         chat_type = force_chat_type(chat)
@@ -1927,9 +2020,13 @@ async def add_force_command(_: Client, message: Message) -> None:
             await message.reply_text("<pre>⚠️ Oɴʟʏ CHANNEL, GROUP, ᴏʀ SUPERGROUP Cʜᴀᴛs Aʀᴇ Sᴜᴘᴘᴏʀᴛᴇᴅ.</pre>", parse_mode=ParseMode.HTML, quote=True)
             return
         try:
-            bot_member = await bot.get_chat_member(chat_id, "me")
-            status = getattr(bot_member, "status", None)
-            bot_is_admin = is_force_bot_admin(status)
+            bot_member = await telegram_bot_api(
+                "getChatMember", {"chat_id": chat_id, "user_id": "me"}
+            )
+            bot_status = str((bot_member or {}).get("status") or "").lower()
+            bot_is_admin = bot_status in {"administrator", "creator"}
+        except (TelegramBotApiError, KeyError, ValueError):
+            bot_is_admin = False
         except Exception:
             logger.exception("Force-join bot-admin check failed for chat %s", chat_id)
             bot_is_admin = False
