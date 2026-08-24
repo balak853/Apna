@@ -753,11 +753,9 @@ async def make_force_admin_help(callback_query: CallbackQuery) -> None:
         return
     try:
         chat_id = int((callback_query.data or "").split(":", 1)[1])
-        chat = await bot.get_chat(chat_id)
-    except (IndexError, TypeError, ValueError):
-        await callback_query.answer("⚠️ Iɴᴠᴀʟɪᴅ Cʜᴀᴛ.", show_alert=True)
-        return
-    except Exception:
+        chat_data = await telegram_bot_api("getChat", {"chat_id": chat_id})
+        chat = type("TelegramChat", (), chat_data)()
+    except (IndexError, TypeError, ValueError, TelegramBotApiError):
         await callback_query.answer("⚠️ Cʜᴀᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Fᴏᴜɴᴅ.", show_alert=True)
         return
     buttons = []
