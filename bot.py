@@ -2119,26 +2119,35 @@ def parse_profile_datetime(value: Any) -> datetime | None:
         text = str(value).strip()
         if not text:
             return None
-        normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
-        parsed = None
-        try:
-            parsed = datetime.fromisoformat(normalized)
-        except ValueError:
-            for date_format in (
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d",
-                "%d-%m-%Y %H:%M:%S",
-                "%d-%m-%Y",
-                "%d/%m/%Y %H:%M:%S",
-                "%d/%m/%Y",
-                "%m/%d/%Y %H:%M:%S",
-                "%m/%d/%Y",
-            ):
-                try:
-                    parsed = datetime.strptime(text, date_format)
-                    break
-                except ValueError:
-                    continue
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", text):
+            timestamp = float(text)
+            if timestamp > 10_000_000_000:
+                timestamp /= 1000
+            try:
+                parsed = datetime.fromtimestamp(timestamp, timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
+        else:
+            normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+            parsed = None
+            try:
+                parsed = datetime.fromisoformat(normalized)
+            except ValueError:
+                for date_format in (
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%d",
+                    "%d-%m-%Y %H:%M:%S",
+                    "%d-%m-%Y",
+                    "%d/%m/%Y %H:%M:%S",
+                    "%d/%m/%Y",
+                    "%m/%d/%Y %H:%M:%S",
+                    "%m/%d/%Y",
+                ):
+                    try:
+                        parsed = datetime.strptime(text, date_format)
+                        break
+                    except ValueError:
+                        continue
         if parsed is None:
             return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
