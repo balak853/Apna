@@ -20,7 +20,7 @@ import httpx
 from flask import Flask
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.collection import Collection
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from pyrogram import Client, filters
 from pyrogram.errors import UserNotParticipant
 from pyrogram.enums import ChatMemberStatus, ChatMembersFilter, ChatType, ParseMode
@@ -1673,7 +1673,24 @@ def claim_autolike_daily_run_sync(run_date: str) -> bool:
     now = utc_now()
     lock_until = now + timedelta(hours=6)
     try:
-        result = settings.update_one(
+        try:
+            settings.update_one(
+                {"_id": "autolike_daily_run"},
+                {
+                    "$setOnInsert": {
+                        "_id": "autolike_daily_run",
+                        "run_date": None,
+                    }
+                },
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            # Another instance created the lock document between the
+            # existence check and insert. The conditional claim below remains
+            # the single atomic decision-maker.
+            pass
+
+        claimed = settings.find_one_and_update(
             {
                 "_id": "autolike_daily_run",
                 "$or": [
@@ -1693,11 +1710,10 @@ def claim_autolike_daily_run_sync(run_date: str) -> bool:
                     "updated_at": now,
                 },
                 "$unset": {"completed_at": ""},
-                "$setOnInsert": {"_id": "autolike_daily_run"},
             },
-            upsert=True,
+            return_document=ReturnDocument.AFTER,
         )
-        return result.modified_count == 1 or result.upserted_id is not None
+        return claimed is not None
     except PyMongoError:
         logger.exception("AutoLike daily run lock acquisition failed")
         return False
