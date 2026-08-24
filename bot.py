@@ -1503,11 +1503,6 @@ async def build_vip_result(uid: str) -> str:
         f"⚡ <b>𝐀𝐏𝐈 {index}</b> +{given} Likes"
         for index, given in enumerate(given_values, start=1)
     )
-    error_lines = "\n".join(
-        f"⚠️ API {index}: {vip_escape(result.get('message'), 'API unavailable')}"
-        for index, result in enumerate(safe_results, start=1)
-        if given_values[index - 1] == 0 and result.get("message")
-    )
     after = before + total_given
 
     remaining_days = 0
@@ -1536,8 +1531,6 @@ async def build_vip_result(uid: str) -> str:
         "",
         f"🎯 Rᴇᴍᴀɪɴɪɴɢ Dᴀʏs - {remaining_days}",
     ]
-    if error_lines:
-        lines.extend(["", error_lines])
     return "\n".join(lines)
 
 
