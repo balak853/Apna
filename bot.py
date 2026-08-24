@@ -2230,11 +2230,24 @@ def build_not_banned_output(uid: str, ban_payload: dict[str, Any], player_payloa
         player_payloads, {"nickname", "playername", "playernickname", "name", "username"}
     )
     resolved_uid = ban_payload.get("player_id") or ban_payload.get("uid") or uid
+    safe_name = html.escape(str(player_name), quote=True)
+    safe_uid = html.escape(str(resolved_uid), quote=True)
     return (
-        "<b>🛡 Bᴀɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ</b>\n\n"
-        f"👤 Nᴀᴍᴇ: {html.escape(str(player_name), quote=True)}\n"
-        f"🆔 Uɪᴅ: <code>{html.escape(str(resolved_uid), quote=True)}</code>\n"
-        "🟢 Sᴛᴀᴛᴜs: <b>Nᴏᴛ Bᴀɴɴᴇᴅ</b>"
+        "<b>╭━━━ 🛡 Bᴀɴ Vᴇʀɪғɪᴄᴀᴛɪᴏɴ ━━━╮</b>\n"
+        "<b>│</b>\n"
+        f"<b>│ 👤 Nᴀᴍᴇ : {safe_name}</b>\n"
+        "<b>│ 🆔 Uɪᴅ :</b>\n"
+        f"<pre>{safe_uid}</pre>\n"
+        "<b>│</b>\n"
+        "<b>│ 🟢 Sᴛᴀᴛᴜs : 🟢 Nᴏᴛ Bᴀɴɴᴇᴅ</b>\n"
+        "<b>│</b>\n"
+        "<b>├── ✅ Nᴏᴛɪᴄᴇ</b>\n"
+        "<b>│   Uɪᴅ ɪs ᴄᴜʀʀᴇɴᴛʟʏ ᴄʟᴇᴀɴ</b>\n"
+        "<b>│   ᴀɴᴅ ɴᴏᴛ ғʟᴀɢɢᴇᴅ.</b>\n"
+        "<b>│</b>\n"
+        "<b>│ 📡 Sᴏᴜʀᴄᴇ : Lɪᴠᴇ API</b>\n"
+        "<b>│ 🔐 Nᴇᴠᴇʀ sʜᴀʀᴇ Pᴀssᴡᴏʀᴅ / OTP</b>\n"
+        "<b>╰━━━ ⚡ Lɪᴠᴇ Cʜᴇᴄᴋ ━━━╯</b>"
     )
 
 
