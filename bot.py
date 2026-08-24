@@ -2857,6 +2857,10 @@ async def disable_command(_: Client, message: Message) -> None:
             return
         member = await bot.get_chat_member(message.chat.id, message.from_user.id)
         if not group_member_is_admin(member):
+            await message.reply_text(
+                "⛔ Oɴʟʏ Gʀᴏᴜᴘ Oᴡɴᴇʀ Oʀ Aᴅᴍɪɴ Cᴀɴ Uѕᴇ /disable.",
+                quote=True,
+            )
             return
 
         arguments = command_arguments(message)
@@ -2911,6 +2915,13 @@ async def disable_command(_: Client, message: Message) -> None:
             "⚠️ Tʜɪs Cᴏᴍᴍᴀɴᴅ ɪs ɴᴏᴡ Dɪsᴀʙʟᴇᴅ Fᴏʀ Tʜɪs Gʀᴏᴜᴘ Oɴʟʏ.",
             quote=True,
         )
+    except PyMongoError:
+        logger.exception("disable command database operation failed")
+        await message.reply_text(
+            "⚠️ Cᴏᴜʟᴅ Nᴏᴛ Sᴀᴠᴇ Tʜᴇ Dɪsᴀʙʟᴇᴅ Cᴏᴍᴍᴀɴᴅ Sᴛᴀᴛᴜs.\n"
+            "Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.",
+            quote=True,
+        )
     except Exception:
         logger.exception("disable command failed")
 
@@ -2924,6 +2935,10 @@ async def active_command(_: Client, message: Message) -> None:
             return
         member = await bot.get_chat_member(message.chat.id, message.from_user.id)
         if not group_member_is_admin(member):
+            await message.reply_text(
+                "⛔ Oɴʟʏ Gʀᴏᴜᴘ Oᴡɴᴇʀ Oʀ Aᴅᴍɪɴ Cᴀɴ Uѕᴇ /active.",
+                quote=True,
+            )
             return
 
         arguments = command_arguments(message)
@@ -2973,6 +2988,13 @@ async def active_command(_: Client, message: Message) -> None:
             f"👑 Oᴡɴᴇʀ : {html.escape(str(owner_name), quote=True)}\n"
             "🔓 Sᴛᴀᴛᴜs : Aᴄᴛɪᴠᴇ\n"
             "✅ Tʜɪs Cᴏᴍᴍᴀɴᴅ ɪs ɴᴏᴡ Aᴄᴛɪᴠᴇ Fᴏʀ Tʜɪs Gʀᴏᴜᴘ.",
+            quote=True,
+        )
+    except PyMongoError:
+        logger.exception("active command database operation failed")
+        await message.reply_text(
+            "⚠️ Cᴏᴜʟᴅ Nᴏᴛ Sᴀᴠᴇ Tʜᴇ Aᴄᴛɪᴠᴇ Cᴏᴍᴍᴀɴᴅ Sᴛᴀᴛᴜs.\n"
+            "Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.",
             quote=True,
         )
     except Exception:
