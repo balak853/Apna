@@ -224,6 +224,7 @@ apis: Collection = database["apis"]
 autolike: Collection = database["autolike"]
 force_join: Collection = database["force_join"]
 settings: Collection = database["settings"]
+disabled_commands: Collection = database["disabled_commands"]
 
 
 def utc_now() -> datetime:
@@ -270,6 +271,11 @@ def initialize_database() -> None:
             [("delete_after", ASCENDING)],
             expireAfterSeconds=0,
             name="autolike_delete_after_ttl",
+        )
+        disabled_commands.create_index(
+            [("chat_id", ASCENDING), ("command", ASCENDING)],
+            unique=True,
+            name="disabled_commands_chat_command_unique",
         )
         apis.update_one(
             {"_id": "routing"},
@@ -799,6 +805,41 @@ def command_arguments(message: Message) -> list[str]:
     text = (message.text or message.caption or "").strip()
     parts = text.split()
     return parts[1:] if parts else []
+
+
+DISABLEABLE_COMMANDS = {"like"}
+
+
+def group_member_is_admin(member: Any) -> bool:
+    status = str(getattr(member, "status", "")).lower().rsplit(".", 1)[-1]
+    return status in {"administrator", "creator", "owner"}
+
+
+def group_member_display_name(member: Any) -> str:
+    user = getattr(member, "user", None)
+    if user is None:
+        return "N/A"
+    name = " ".join(
+        part for part in (
+            getattr(user, "first_name", None),
+            getattr(user, "last_name", None),
+        ) if part
+    ).strip()
+    return name or getattr(user, "username", None) or str(getattr(user, "id", "N/A"))
+
+
+async def is_command_disabled(message: Message, command: str) -> bool:
+    if not is_group_message(message):
+        return False
+    try:
+        document = await asyncio.to_thread(
+            disabled_commands.find_one,
+            {"chat_id": int(message.chat.id), "command": command},
+        )
+        return document is not None and document.get("enabled") is False
+    except PyMongoError:
+        logger.exception("Disabled-command status lookup failed")
+        return False
 
 
 def valid_like_arguments(arguments: list[str]) -> bool:
@@ -2807,6 +2848,73 @@ async def force_admin_callback(_: Client, callback_query: CallbackQuery) -> None
         await callback_query.answer("⚠️ Rᴇǫᴜᴇsᴛ Fᴀɪʟᴇᴅ.", show_alert=True)
 
 
+@bot.on_message(filters.command("disable", case_sensitive=False))
+async def disable_command(_: Client, message: Message) -> None:
+    if not is_group_message(message):
+        return
+    try:
+        if not await sync_group(message):
+            return
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if not group_member_is_admin(member):
+            return
+
+        arguments = command_arguments(message)
+        if len(arguments) != 1:
+            await message.reply_text(
+                "▸ Uѕᴀɢᴇ: /disable <command_name>\n"
+                "E.xᴀᴍᴘʟᴇ: /disable like",
+                quote=True,
+            )
+            return
+        command = arguments[0].lstrip("/").lower()
+        if command not in DISABLEABLE_COMMANDS:
+            await message.reply_text(
+                f"⚠️ Tʜɪs Cᴏᴍᴍᴀɴᴅ Cᴀɴɴᴏᴛ Bᴇ Dɪsᴀʙʟᴇᴅ: /{html.escape(command)}",
+                quote=True,
+            )
+            return
+
+        owner_name = "N/A"
+        async for admin_member in bot.get_chat_members(
+            message.chat.id,
+            filter=ChatMembersFilter.ADMINISTRATORS,
+        ):
+            status = str(getattr(admin_member, "status", "")).lower().rsplit(".", 1)[-1]
+            if status in {"creator", "owner"}:
+                owner_name = group_member_display_name(admin_member)
+                break
+        group_name = (
+            getattr(message.chat, "title", None)
+            or str(message.chat.id)
+        )
+        await asyncio.to_thread(
+            disabled_commands.update_one,
+            {"chat_id": int(message.chat.id), "command": command},
+            {
+                "$set": {
+                    "chat_id": int(message.chat.id),
+                    "command": command,
+                    "enabled": False,
+                    "updated_at": utc_now(),
+                }
+            },
+            upsert=True,
+        )
+        await message.reply_text(
+            "🚫 Cᴏᴍᴍᴀɴᴅ Dɪsᴀʙʟᴇᴅ\n"
+            "⚡ Cᴏᴍᴍᴀɴᴅ :\n\n"
+            f"/{command}\n\n"
+            f"📍 Gʀᴏᴜᴘ : {html.escape(str(group_name), quote=True)}\n"
+            f"👑 Oᴡɴᴇʀ : {html.escape(str(owner_name), quote=True)}\n"
+            "🔒 Sᴛᴀᴛᴜs : Dɪsᴀʙʟᴇᴅ\n"
+            "⚠️ Tʜɪs Cᴏᴍᴍᴀɴᴅ ɪs ɴᴏᴡ Dɪsᴀʙʟᴇᴅ Fᴏʀ Tʜɪs Gʀᴏᴜᴘ Oɴʟʏ.",
+            quote=True,
+        )
+    except Exception:
+        logger.exception("disable command failed")
+
+
 @bot.on_message(filters.command("bancheck", case_sensitive=False))
 async def bancheck_command(_: Client, message: Message) -> None:
     processing: Message | None = None
@@ -3107,6 +3215,8 @@ async def users_command(_: Client, message: Message) -> None:
 async def like_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
+        if await is_command_disabled(message, "like"):
+            return
         status_print("COMMAND RECEIVED: /like")
         if not await command_access_allowed(message):
             return
