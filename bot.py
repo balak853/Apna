@@ -828,6 +828,43 @@ def group_member_display_name(member: Any) -> str:
     return name or getattr(user, "username", None) or str(getattr(user, "id", "N/A"))
 
 
+def bot_admin_permission_keyboard(username: str | None) -> InlineKeyboardMarkup | None:
+    if not username:
+        return None
+    return InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton(
+                "🔐 Make me Admin",
+                url=f"https://t.me/{username.lstrip('@')}?startgroup=true",
+            )
+        ]]
+    )
+
+
+async def require_bot_group_admin(message: Message) -> bool:
+    if not is_group_message(message):
+        return True
+    try:
+        bot_member = await bot.get_chat_member(message.chat.id, "me")
+        if group_member_is_admin(bot_member):
+            return True
+    except Exception:
+        logger.warning("Bot group-admin permission check failed", exc_info=True)
+
+    username: str | None = None
+    try:
+        bot_user = await bot.get_me()
+        username = getattr(bot_user, "username", None)
+    except Exception:
+        logger.warning("Could not resolve bot username for admin button", exc_info=True)
+    await message.reply_text(
+        "Make me admin in this group/Supergroup and use my commands",
+        reply_markup=bot_admin_permission_keyboard(username),
+        quote=True,
+    )
+    return False
+
+
 async def is_command_disabled(message: Message, command: str) -> bool:
     if not is_group_message(message):
         return False
@@ -3005,6 +3042,8 @@ async def active_command(_: Client, message: Message) -> None:
 async def bancheck_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
+        if not await require_bot_group_admin(message):
+            return
         status_print("COMMAND RECEIVED: /bancheck")
         if not await command_access_allowed(message):
             return
@@ -3086,6 +3125,8 @@ async def bancheck_command(_: Client, message: Message) -> None:
 async def get_uid_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
+        if not await require_bot_group_admin(message):
+            return
         status_print("COMMAND RECEIVED: /get")
         if not await command_access_allowed(message):
             return
@@ -3301,6 +3342,8 @@ async def users_command(_: Client, message: Message) -> None:
 async def like_command(_: Client, message: Message) -> None:
     processing: Message | None = None
     try:
+        if not await require_bot_group_admin(message):
+            return
         if await is_command_disabled(message, "like"):
             return
         status_print("COMMAND RECEIVED: /like")
