@@ -2159,7 +2159,7 @@ def profile_datetime(payloads: list[Any], aliases: set[str]) -> datetime | None:
 
 
 def calendar_shift(value: datetime, years: int = 0, months: int = 0) -> datetime:
-    month_index = value.month - 1 + months + (years * 12)
+    month_index = (value.year * 12) + value.month - 1 + months + (years * 12)
     year, month_zero = divmod(month_index, 12)
     month = month_zero + 1
     day = min(value.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
@@ -2179,8 +2179,12 @@ def elapsed_calendar_duration(start: datetime, end: datetime) -> str:
     if candidate > end:
         months -= 1
         candidate = calendar_shift(cursor, months=months)
-    remainder = end - candidate
-    days, seconds = divmod(int(remainder.total_seconds()), 86400)
+    # Calendar subtraction determines years/months first; only the
+    # leftover interval is converted to clock units. This keeps every
+    # displayed component normalized instead of exposing total months/days.
+    months = max(0, min(11, months))
+    remainder_seconds = max(0, int((end - candidate).total_seconds()))
+    days, seconds = divmod(remainder_seconds, 86400)
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
     return f"{years} years, {months} months, {days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
