@@ -1837,21 +1837,6 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
     logger.info("PROCESSING UID: %s", uid)
 
     try:
-        payloads = await fetch_vip_player_payloads(uid)
-        player_name = vip_player_value(
-            payloads,
-            {"nickname", "playername", "playernickname", "name", "username"},
-            "Not Available",
-        )
-        level = vip_player_value(payloads, {"level", "playerlevel"}, "Not Available")
-        before = vip_number(
-            vip_player_value(
-                payloads,
-                {"likes", "like", "likecount", "totallikes", "liked"},
-                0,
-            ),
-            0,
-        )
         # AutoLike always sends one request to every configured Like API.
         selected_apis = configured_like_apis(api_config, "all")
         if not selected_apis:
@@ -1874,6 +1859,40 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
             logger.warning("UID FAILED OR ALREADY PROCESSED: %s", uid)
             return
 
+        # Prefer player details returned by the Like APIs. Only call the
+        # player-info APIs when those details are missing from the Like data.
+        like_details = next(
+            (
+                result for result in safe_results
+                if any(
+                    result.get(field) not in (None, "")
+                    for field in ("nickname", "level", "before")
+                )
+            ),
+            {},
+        )
+        player_name = like_details.get("nickname")
+        level = like_details.get("level")
+        before_value = like_details.get("before")
+        if player_name in (None, "") or level in (None, "") or before_value in (None, ""):
+            payloads = await fetch_vip_player_payloads(uid)
+            player_name = player_name or vip_player_value(
+                payloads,
+                {"nickname", "playername", "playernickname", "name", "username"},
+                "Not Available",
+            )
+            level = level or vip_player_value(
+                payloads,
+                {"level", "playerlevel"},
+                "Not Available",
+            )
+            if before_value in (None, ""):
+                before_value = vip_player_value(
+                    payloads,
+                    {"likes", "like", "likecount", "totallikes", "liked"},
+                    0,
+                )
+        before = vip_number(before_value, 0)
         given = vip_number(combined.get("given"), 0)
         after = vip_number(combined.get("after"), before + given)
         expires_at = record.get("expires_at")
