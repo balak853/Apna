@@ -2735,6 +2735,19 @@ bot = Client(
 )
 
 
+from visit import register_visit_handler
+
+register_visit_handler(
+    bot=bot,
+    database=database,
+    require_bot_group_admin=require_bot_group_admin,
+    command_access_allowed=command_access_allowed,
+    is_command_disabled=is_command_disabled,
+    ist_now=ist_now,
+    logger=logger,
+)
+
+
 @bot.on_message(filters.incoming & ~filters.service, group=-1)
 async def register_every_interaction(_: Client, message: Message) -> None:
     try:
