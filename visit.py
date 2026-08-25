@@ -79,26 +79,15 @@ def _ensure_indexes(collection: Collection) -> None:
 
 def _format_success(payload: dict[str, Any], region: str, used: int) -> str:
     return (
-        "✦━━━ **Vɪꜱɪᴛs Sᴇɴᴛ Sᴜᴄᴄᴇssғᴜʟʟʏ 🥳** ━━━✦
-
-"
-        "━━━━━━━━━━━━━━━━━━
-"
-        f"👤 **Pʟᴀʏᴇʀ:** {payload['PlayerNickname']}
-"
-        f"🆔 **Uɪᴅ:** {payload['UID']}
-"
-        f"🌍 **Rᴇɢɪᴏɴ:** {region}
-
-"
-        f"👁️ **Sᴜᴄᴄᴇssғᴜʟ Vɪsɪᴛs:** {payload['SuccessfulVisits']}
-"
-        f"❌ **Fᴀɪʟᴇᴅ Vɪsɪᴛs:** {payload['FailedVisits']}
-"
-        f"📊 **Tᴏᴛᴀʟ Vɪsɪᴛs:** {payload['TotalVisits']}
-"
-        "━━━━━━━━━━━━━━━━━━
-"
+        "✦━━━ **Vɪꜱɪᴛs Sᴇɴᴛ Sᴜᴄᴄᴇssғᴜʟʟʏ 🥳** ━━━✦\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"👤 **Pʟᴀʏᴇʀ:** {payload['PlayerNickname']}\n"
+        f"🆔 **Uɪᴅ:** {payload['UID']}\n"
+        f"🌍 **Rᴇɢɪᴏɴ:** {region}\n\n"
+        f"👁️ **Sᴜᴄᴄᴇssғᴜʟ Vɪsɪᴛs:** {payload['SuccessfulVisits']}\n"
+        f"❌ **Fᴀɪʟᴇᴅ Vɪsɪᴛs:** {payload['FailedVisits']}\n"
+        f"📊 **Tᴏᴛᴀʟ Vɪsɪᴛs:** {payload['TotalVisits']}\n"
+        "━━━━━━━━━━━━━━━━━━\n"
         f"📉 **Yᴏᴜʀ Lɪᴍɪᴛ:** {used}/{VISIT_LIMIT}"
     )
 
@@ -154,6 +143,7 @@ def register_visit_handler(
 
             processing = await message.reply_text(
                 "**⏳ Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇsᴛ...**",
+                parse_mode=ParseMode.MARKDOWN,
                 quote=True,
             )
             parts = (message.text or message.caption or "").strip().split()
@@ -181,7 +171,7 @@ def register_visit_handler(
             if not user_reserved:
                 await _delete_processing(processing)
                 processing = None
-                await message.reply_text(_limit_message(), quote=True)
+                await message.reply_text(_limit_message(), parse_mode=ParseMode.MARKDOWN, quote=True)
                 return
 
             uid_reserved = await asyncio.to_thread(_reserve, collection, "uid", uid, day)
@@ -189,7 +179,7 @@ def register_visit_handler(
                 await asyncio.to_thread(_release, collection, "user", user_key, day)
                 await _delete_processing(processing)
                 processing = None
-                await message.reply_text(_uid_limit_message(uid), quote=True)
+                await message.reply_text(_uid_limit_message(uid), parse_mode=ParseMode.MARKDOWN, quote=True)
                 return
 
             try:
@@ -210,6 +200,7 @@ def register_visit_handler(
                 processing = None
                 await message.reply_text(
                     "╭━━━ ⚠️ **Vɪsɪᴛ Fᴀɪʟᴇᴅ** ━━━╮\n│\n│ **Cᴏᴜʟᴅ Nᴏᴛ Cᴏᴍᴘʟᴇᴛᴇ Yᴏᴜʀ Vɪsɪᴛ Rᴇǫᴜᴇsᴛ.**\n│\n│ ⏳ **Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.**\n│\n╰━━━ ⚡ **Tʀʏ Aɢᴀɪɴ** ━━━╯",
+                    parse_mode=ParseMode.MARKDOWN,
                     quote=True,
                 )
                 return
@@ -227,7 +218,7 @@ def register_visit_handler(
         except PyMongoError:
             logger.exception("Visit database operation failed")
             await _delete_processing(processing)
-            await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", quote=True)
+            await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", parse_mode=ParseMode.MARKDOWN, quote=True)
         except Exception:
             logger.exception("Visit command failed")
             await _delete_processing(processing)
