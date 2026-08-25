@@ -83,12 +83,15 @@ def _format_success(payload: dict[str, Any], region: str, used: int) -> str:
         "━━━━━━━━━━━━━━━━━━\n"
         f"👤 **Pʟᴀʏᴇʀ:** {payload['PlayerNickname']}\n"
         f"🆔 **Uɪᴅ:** {payload['UID']}\n"
-        f"🌍 **Rᴇɢɪᴏɴ:** {region}\n\n"
+        f"🌍 **Rᴇɢɪᴏɴ:** {region}\n"
+        f"🛠️ **Dᴇᴠ:** {payload['DEV']}\n"
+        "📌 **Sᴛᴀᴛᴜs:** Cᴏᴍᴘʟᴇᴛᴇᴅ\n\n"
         f"👁️ **Sᴜᴄᴄᴇssғᴜʟ Vɪsɪᴛs:** {payload['SuccessfulVisits']}\n"
         f"❌ **Fᴀɪʟᴇᴅ Vɪsɪᴛs:** {payload['FailedVisits']}\n"
         f"📊 **Tᴏᴛᴀʟ Vɪsɪᴛs:** {payload['TotalVisits']}\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"📉 **Yᴏᴜʀ Lɪᴍɪᴛ:** {used}/{VISIT_LIMIT}"
+        f"📉 **Yᴏᴜʀ Lɪᴍɪᴛ:** {used}/{VISIT_LIMIT}\n"
+        f"🔋 **Rᴇᴍᴀɪɴɪɴɢ:** {max(VISIT_LIMIT - used, 0)}/{VISIT_LIMIT}"
     )
 
 
