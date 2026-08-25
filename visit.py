@@ -38,7 +38,10 @@ def _usage_day(ist_now: Callable[[], datetime]) -> str:
 def _reserve(collection: Collection, kind: str, key: str, day: str) -> bool:
     result = collection.update_one(
         {"kind": kind, "key": key, "day": day, "$expr": {"$lt": [{"$add": ["$successful", "$pending"]}, VISIT_LIMIT]}},
-        {"$inc": {"pending": 1}},
+        {
+            "$setOnInsert": {"kind": kind, "key": key, "day": day, "successful": 0, "pending": 0},
+            "$inc": {"pending": 1},
+        },
         upsert=True,
     )
     return result.modified_count == 1 or result.upserted_id is not None
