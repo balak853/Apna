@@ -105,40 +105,21 @@ def _format_success(payload: dict[str, Any], region: str, used: int) -> str:
 
 def _limit_message() -> str:
     return (
-        "╭━━━ 🚫 Lɪᴍɪᴛ Rᴇᴀᴄʜᴇᴅ ━━━╮
-│
-"
-        "│ ⚡ Yᴏᴜʀ Dᴀɪʟʏ Vɪsɪᴛ Lɪᴍɪᴛ
-│
-"
-        "│ 📊 Uꜱᴇᴅ : 3/3
-│ 🎯 Lɪᴍɪᴛ : 3 Vɪꜱɪᴛꜱ
-│
-"
-        "│ ⏳ Cᴏᴍᴇ Bᴀᴄᴋ Tᴏᴍᴏʀʀᴏᴡ
-│
-"
+        "╭━━━ 🚫 **Lɪᴍɪᴛ Rᴇᴀᴄʜᴇᴅ** ━━━╮\n│\n"
+        "│ ⚡ **Yᴏᴜʀ Dᴀɪʟʏ Vɪsɪᴛ Lɪᴍɪᴛ**\n│\n"
+        "│ 📊 **Uꜱᴇᴅ:** 3/3\n│ 🎯 **Lɪᴍɪᴛ:** 3 Vɪsɪᴛꜱ\n│\n"
+        "│ ⏳ **Cᴏᴍᴇ Bᴀᴄᴋ Tᴏᴍᴏʀʀᴏᴡ**\n│\n"
         "╰━━━ 🔒 Lɪᴍɪᴛ Eɴᴅ ━━━╯"
     )
 
 
 def _uid_limit_message(uid: str) -> str:
     return (
-        "╭━━━ 🚫 Uɪᴅ Vɪsɪᴛ Lɪᴍɪᴛ ━━━╮
-│
-"
-        f"│ 🆔 Uɪᴅ : {uid}
-│
-"
-        "│ ⚠️ Tʜɪs Uɪᴅ Hᴀs Rᴇᴀᴄʜᴇᴅ
-"
-        "│    Tʜᴇ Mᴀx Vɪsɪᴛ Lɪᴍɪᴛ Fᴏʀ Tᴏᴅᴀʏ.
-│
-"
-        "│ 🔒 Mᴀx : 3/3
-│ ⏳ Tʀʏ Aɢᴀɪɴ Tᴏᴍᴏʀʀᴏᴡ.
-│
-"
+        "╭━━━ 🚫 **Uɪᴅ Vɪsɪᴛ Lɪᴍɪᴛ** ━━━╮\n│\n"
+        f"│ 🆔 **Uɪᴅ:** {uid}\n│\n"
+        "│ ⚠️ **Tʜɪs Uɪᴅ Hᴀs Rᴇᴀᴄʜᴇᴅ**\n"
+        "│    **Tʜᴇ Mᴀx Vɪsɪᴛ Lɪᴍɪᴛ Fᴏʀ Tᴏᴅᴀʏ.**\n│\n"
+        "│ 🔒 **Mᴀx:** 3/3\n│ ⏳ **Tʀʏ Aɢᴀɪɴ Tᴏᴍᴏʀʀᴏᴡ.**\n│\n"
         "╰━━━ ⚡ Vɪsɪᴛ Lɪᴍɪᴛ ━━━╯"
     )
 
@@ -180,7 +161,7 @@ def register_visit_handler(
                 await _delete_processing(processing)
                 processing = None
                 await message.reply_text(
-                    "**❌ Iɴᴠᴀʟɪᴅ Uѕᴀɢᴇ**\n\n**Uѕᴇ:** `/visit Rᴇɢɪᴏɴ Uɪᴅ`\n\n**Eхᴀᴍᴘʟᴇ:** `/visit ind 1589573783`",
+                    "**❌ Iɴᴠᴀʟɪᴅ Uѕᴀɢᴇ**\n\n**Uѕᴇ:** \`/visit Rᴇɢɪᴏɴ Uɪᴅ\`\n\n**Eхᴀᴍᴘʟᴇ:** \`/visit ind 1589573783\`",
                     parse_mode=ParseMode.MARKDOWN,
                     quote=True,
                 )
