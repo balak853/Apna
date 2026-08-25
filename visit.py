@@ -172,7 +172,7 @@ def register_visit_handler(
                 return
 
             processing = await message.reply_text(
-                "⏳Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇsᴛ...",
+                "**⏳ Pʀᴏᴄᴇꜱꜱɪɴɢ Yᴏᴜʀ Rᴇǫᴜᴇsᴛ...**",
                 quote=True,
             )
             parts = (message.text or message.caption or "").strip().split()
@@ -180,8 +180,8 @@ def register_visit_handler(
                 await _delete_processing(processing)
                 processing = None
                 await message.reply_text(
-                    "<pre>❌ Invalid Usage\n\nUse:\n/visit REGION UID\n\nExample:\n/visit ind 1589573783</pre>",
-                    parse_mode=ParseMode.HTML,
+                    "**❌ Iɴᴠᴀʟɪᴅ Uѕᴀɢᴇ**\n\n**Uѕᴇ:** `/visit Rᴇɢɪᴏɴ Uɪᴅ`\n\n**Eхᴀᴍᴘʟᴇ:** `/visit ind 1589573783`",
+                    parse_mode=ParseMode.MARKDOWN,
                     quote=True,
                 )
                 return
@@ -189,7 +189,7 @@ def register_visit_handler(
             if user_id is None:
                 await _delete_processing(processing)
                 processing = None
-                await message.reply_text("<pre>❌ Unable to identify the user.</pre>", parse_mode=ParseMode.HTML, quote=True)
+                await message.reply_text("**❌ Uѕᴇʀ Iᴅᴇɴᴛɪғɪᴄᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ**\n\nPʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ.", parse_mode=ParseMode.MARKDOWN, quote=True)
                 return
 
             region = parts[1]
@@ -228,7 +228,7 @@ def register_visit_handler(
                 await _delete_processing(processing)
                 processing = None
                 await message.reply_text(
-                    "╭━━━ ⚠️ Vɪsɪᴛ Fᴀɪʟᴇᴅ ━━━╮\n│\n│ Cᴏᴜʟᴅ Nᴏᴛ Cᴏᴍᴘʟᴇᴛᴇ Yᴏᴜʀ Vɪsɪᴛ Rᴇǫᴜᴇsᴛ.\n│\n│ ⏳ Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.\n│\n╰━━━ ⚡ Tʀʏ Aɢᴀɪɴ ━━━╯",
+                    "╭━━━ ⚠️ **Vɪsɪᴛ Fᴀɪʟᴇᴅ** ━━━╮\n│\n│ **Cᴏᴜʟᴅ Nᴏᴛ Cᴏᴍᴘʟᴇᴛᴇ Yᴏᴜʀ Vɪsɪᴛ Rᴇǫᴜᴇsᴛ.**\n│\n│ ⏳ **Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.**\n│\n╰━━━ ⚡ **Tʀʏ Aɢᴀɪɴ** ━━━╯",
                     quote=True,
                 )
                 return
@@ -246,8 +246,8 @@ def register_visit_handler(
         except PyMongoError:
             logger.exception("Visit database operation failed")
             await _delete_processing(processing)
-            await message.reply_text("⚠️ Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.", quote=True)
+            await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", quote=True)
         except Exception:
             logger.exception("Visit command failed")
             await _delete_processing(processing)
-            await message.reply_text("⚠️ Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.", quote=True)
+            await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", quote=True)
