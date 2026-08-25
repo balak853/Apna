@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 from pymongo.collection import Collection
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -36,15 +36,36 @@ def _usage_day(ist_now: Callable[[], datetime]) -> str:
 
 
 def _reserve(collection: Collection, kind: str, key: str, day: str) -> bool:
+    reservation_filter = {
+        "kind": kind,
+        "key": key,
+        "day": day,
+        "$expr": {"$lt": [{"$add": ["$successful", "$pending"]}, VISIT_LIMIT]},
+    }
     result = collection.update_one(
-        {"kind": kind, "key": key, "day": day, "$expr": {"$lt": [{"$add": ["$successful", "$pending"]}, VISIT_LIMIT]}},
-        {
-            "$setOnInsert": {"kind": kind, "key": key, "day": day, "successful": 0},
-            "$inc": {"pending": 1},
-        },
-        upsert=True,
+        reservation_filter,
+        {"$inc": {"pending": 1}},
     )
-    return result.modified_count == 1 or result.upserted_id is not None
+    if result.modified_count == 1:
+        return True
+
+    try:
+        collection.insert_one(
+            {
+                "kind": kind,
+                "key": key,
+                "day": day,
+                "successful": 0,
+                "pending": 1,
+            }
+        )
+        return True
+    except DuplicateKeyError:
+        result = collection.update_one(
+            reservation_filter,
+            {"$inc": {"pending": 1}},
+        )
+        return result.modified_count == 1
 
 
 def _release(collection: Collection, kind: str, key: str, day: str) -> None:
