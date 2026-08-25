@@ -2347,7 +2347,7 @@ def build_bancheck_output(
 
 def bancheck_developer_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("ᴅᴇᴠʟᴏᴘᴇʀ", url="https://t.me/BALAK_TRUSTED", style="primary")]]
+        [[InlineKeyboardButton("ᴅᴇᴠʟᴏᴘᴇʀ", url="https://t.me/BALAK_TRUSTED")]]
     )
 
 
