@@ -39,7 +39,7 @@ def _reserve(collection: Collection, kind: str, key: str, day: str) -> bool:
     result = collection.update_one(
         {"kind": kind, "key": key, "day": day, "$expr": {"$lt": [{"$add": ["$successful", "$pending"]}, VISIT_LIMIT]}},
         {
-            "$setOnInsert": {"kind": kind, "key": key, "day": day, "successful": 0, "pending": 0},
+            "$setOnInsert": {"kind": kind, "key": key, "day": day, "successful": 0},
             "$inc": {"pending": 1},
         },
         upsert=True,
@@ -159,7 +159,7 @@ def register_visit_handler(
                 await _delete_processing(processing)
                 processing = None
                 await message.reply_text(
-                    "**❌ Iɴᴠᴀʟɪᴅ Uѕᴀɢᴇ**\n\n**Uѕᴇ:** \`/visit Rᴇɢɪᴏɴ Uɪᴅ\`\n\n**Eхᴀᴍᴘʟᴇ:** \`/visit ind 1589573783\`",
+                    "**❌ Iɴᴠᴀʟɪᴅ Uѕᴀɢᴇ**\n\n**Uѕᴇ:** \\`/visit Rᴇɢɪᴏɴ Uɪᴅ\\`\n\n**Eхᴀᴍᴘʟᴇ:** \\`/visit ind 1589573783\\`",
                     parse_mode=ParseMode.MARKDOWN,
                     quote=True,
                 )
