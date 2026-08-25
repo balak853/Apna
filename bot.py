@@ -2264,27 +2264,28 @@ def calendar_shift(value: datetime, years: int = 0, months: int = 0) -> datetime
 
 
 def elapsed_calendar_duration(start: datetime, end: datetime) -> str:
-    if start > end:
-        start = end
-    years = end.year - start.year
-    cursor = calendar_shift(start, years=years)
-    if cursor > end:
-        years -= 1
-        cursor = calendar_shift(start, years=years)
-    months = (end.year - cursor.year) * 12 + end.month - cursor.month
-    candidate = calendar_shift(cursor, months=months)
-    if candidate > end:
-        months -= 1
-        candidate = calendar_shift(cursor, months=months)
-    # Calendar subtraction determines years/months first; only the
-    # leftover interval is converted to clock units. This keeps every
-    # displayed component normalized instead of exposing total months/days.
-    months = max(0, min(11, months))
-    remainder_seconds = max(0, int((end - candidate).total_seconds()))
-    days, seconds = divmod(remainder_seconds, 86400)
-    hours, seconds = divmod(seconds, 3600)
-    minutes, seconds = divmod(seconds, 60)
-    return f"{years} years, {months} months, {days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+      start = start.astimezone(IST)
+      end = end.astimezone(IST)
+      if start > end:
+          start = end
+
+      years = end.year - start.year
+      cursor = calendar_shift(start, years=years)
+      if cursor > end:
+          years -= 1
+          cursor = calendar_shift(start, years=years)
+
+      months = (end.year - cursor.year) * 12 + end.month - cursor.month
+      candidate = calendar_shift(cursor, months=months)
+      if candidate > end:
+          months -= 1
+          candidate = calendar_shift(cursor, months=months)
+
+      remainder = end - candidate
+      days = remainder.days
+      hours, remainder_seconds = divmod(remainder.seconds, 3600)
+      minutes, seconds = divmod(remainder_seconds, 60)
+      return f"{years} years, {months} months, {days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
 
 
 def bancheck_player_field(payloads: list[Any], aliases: set[str], fallback: Any = "Not Available") -> str:
