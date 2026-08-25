@@ -10,7 +10,7 @@ from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
-from pyrogram.types import Message
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 
 VISIT_LIMIT = 3
@@ -84,7 +84,6 @@ def _format_success(payload: dict[str, Any], region: str, used: int) -> str:
         f"👤 **Pʟᴀʏᴇʀ:** {payload['PlayerNickname']}\n"
         f"🆔 **Uɪᴅ:** {payload['UID']}\n"
         f"🌍 **Rᴇɢɪᴏɴ:** {region}\n"
-        f"🛠️ **Dᴇᴠ:** {payload['DEV']}\n"
         "📌 **Sᴛᴀᴛᴜs:** Cᴏᴍᴘʟᴇᴛᴇᴅ\n\n"
         f"👁️ **Sᴜᴄᴄᴇssғᴜʟ Vɪsɪᴛs:** {payload['SuccessfulVisits']}\n"
         f"❌ **Fᴀɪʟᴇᴅ Vɪsɪᴛs:** {payload['FailedVisits']}\n"
@@ -92,6 +91,12 @@ def _format_success(payload: dict[str, Any], region: str, used: int) -> str:
         "━━━━━━━━━━━━━━━━━━\n"
         f"📉 **Yᴏᴜʀ Lɪᴍɪᴛ:** {used}/{VISIT_LIMIT}\n"
         f"🔋 **Rᴇᴍᴀɪɴɪɴɢ:** {max(VISIT_LIMIT - used, 0)}/{VISIT_LIMIT}"
+    )
+
+
+def developer_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Dᴇᴠᴇʟᴏᴘᴇʀ", url="https://t.me/BALAK_TRUSTED")]]
     )
 
 
@@ -217,7 +222,12 @@ def register_visit_handler(
             )
             await _delete_processing(processing)
             processing = None
-            await message.reply_text(_format_success(payload, region, int(used)), parse_mode=ParseMode.MARKDOWN, quote=True)
+            await message.reply_text(
+                _format_success(payload, region, int(used)),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=developer_keyboard(),
+                quote=True,
+            )
         except PyMongoError:
             logger.exception("Visit database operation failed")
             await _delete_processing(processing)
