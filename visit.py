@@ -160,6 +160,8 @@ def register_visit_handler(
     @bot.on_message(filters.command("visit", case_sensitive=False))
     async def visit_command(_: Client, message: Message) -> None:
         processing: Message | None = None
+        user_reserved = False
+        uid_reserved = False
         user = getattr(message, "from_user", None)
         user_id = getattr(user, "id", None)
         try:
@@ -206,6 +208,7 @@ def register_visit_handler(
             uid_reserved = await asyncio.to_thread(_reserve, collection, "uid", uid, day)
             if not uid_reserved:
                 await asyncio.to_thread(_release, collection, "user", user_key, day)
+                user_reserved = False
                 await _delete_processing(processing)
                 processing = None
                 await message.reply_text(_uid_limit_message(uid), parse_mode=ParseMode.MARKDOWN, quote=True)
@@ -225,6 +228,8 @@ def register_visit_handler(
                     asyncio.to_thread(_release, collection, "user", user_key, day),
                     asyncio.to_thread(_release, collection, "uid", uid, day),
                 )
+                user_reserved = False
+                uid_reserved = False
                 await _delete_processing(processing)
                 processing = None
                 await message.reply_text(
@@ -238,6 +243,8 @@ def register_visit_handler(
                 asyncio.to_thread(_complete, collection, "user", user_key, day),
                 asyncio.to_thread(_complete, collection, "uid", uid, day),
             )
+            user_reserved = False
+            uid_reserved = False
             used = await asyncio.to_thread(
                 lambda: collection.find_one({"kind": "user", "key": user_key, "day": day}, {"successful": 1}).get("successful", 0)
             )
@@ -257,3 +264,13 @@ def register_visit_handler(
             logger.exception("Visit command failed")
             await _delete_processing(processing)
             await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", quote=True)
+        finally:
+            for reserved, kind, key in (
+                (user_reserved, "user", user_key if "user_key" in locals() else None),
+                (uid_reserved, "uid", uid if "uid" in locals() else None),
+            ):
+                if reserved and key is not None:
+                    try:
+                        await asyncio.to_thread(_release, collection, kind, key, day)
+                    except PyMongoError:
+                        logger.exception("Visit reservation cleanup failed")
