@@ -18,13 +18,26 @@ VISIT_API_URL = "https://visit.bhuwanhex.bond/visit"
 VISIT_TIMEOUT = httpx.Timeout(connect=8.0, read=25.0, write=8.0, pool=8.0)
 
 
-async def _delete_processing(processing: Message | None) -> None:
-    if processing is None:
-        return
-    try:
-        await processing.delete()
-    except Exception:
-        pass
+async def _respond(
+    message: Message,
+    processing: Message | None,
+    text: str,
+    *,
+    parse_mode: ParseMode | None = None,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    options: dict[str, Any] = {}
+    if parse_mode is not None:
+        options["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        options["reply_markup"] = reply_markup
+    if processing is not None:
+        try:
+            await processing.edit_text(text, **options)
+            return
+        except Exception:
+            pass
+    await message.reply_text(text, quote=True, **options)
 
 
 def _usage_day(ist_now: Callable[[], datetime]) -> str:
@@ -179,19 +192,23 @@ def register_visit_handler(
             )
             parts = (message.text or message.caption or "").strip().split()
             if len(parts) != 3 or not parts[1] or not parts[2].isdigit() or int(parts[2]) <= 0:
-                await _delete_processing(processing)
-                processing = None
-                await message.reply_text(
+                await _respond(
+                    message,
+                    processing,
                     "**❌ Iɴᴠᴀʟɪᴅ Uѕᴀɢᴇ**\n\n**Uѕᴇ:** \\`/visit Rᴇɢɪᴏɴ Uɪᴅ\\`\n\n**Eхᴀᴍᴘʟᴇ:** \\`/visit ind 1589573783\\`",
                     parse_mode=ParseMode.MARKDOWN,
-                    quote=True,
                 )
+                processing = None
                 return
 
             if user_id is None:
-                await _delete_processing(processing)
+                await _respond(
+                    message,
+                    processing,
+                    "**❌ Uѕᴇʀ Iᴅᴇɴᴛɪғɪᴄᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ**\n\nPʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ.",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
                 processing = None
-                await message.reply_text("**❌ Uѕᴇʀ Iᴅᴇɴᴛɪғɪᴄᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ**\n\nPʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ.", parse_mode=ParseMode.MARKDOWN, quote=True)
                 return
 
             region = parts[1]
@@ -200,18 +217,16 @@ def register_visit_handler(
             user_key = str(int(user_id))
             user_reserved = await asyncio.to_thread(_reserve, collection, "user", user_key, day)
             if not user_reserved:
-                await _delete_processing(processing)
+                await _respond(message, processing, _limit_message(), parse_mode=ParseMode.MARKDOWN)
                 processing = None
-                await message.reply_text(_limit_message(), parse_mode=ParseMode.MARKDOWN, quote=True)
                 return
 
             uid_reserved = await asyncio.to_thread(_reserve, collection, "uid", uid, day)
             if not uid_reserved:
                 await asyncio.to_thread(_release, collection, "user", user_key, day)
                 user_reserved = False
-                await _delete_processing(processing)
+                await _respond(message, processing, _uid_limit_message(uid), parse_mode=ParseMode.MARKDOWN)
                 processing = None
-                await message.reply_text(_uid_limit_message(uid), parse_mode=ParseMode.MARKDOWN, quote=True)
                 return
 
             try:
@@ -230,13 +245,13 @@ def register_visit_handler(
                 )
                 user_reserved = False
                 uid_reserved = False
-                await _delete_processing(processing)
-                processing = None
-                await message.reply_text(
+                await _respond(
+                    message,
+                    processing,
                     "╭━━━ ⚠️ **Vɪsɪᴛ Fᴀɪʟᴇᴅ** ━━━╮\n│\n│ **Cᴏᴜʟᴅ Nᴏᴛ Cᴏᴍᴘʟᴇᴛᴇ Yᴏᴜʀ Vɪsɪᴛ Rᴇǫᴜᴇsᴛ.**\n│\n│ ⏳ **Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.**\n│\n╰━━━ ⚡ **Tʀʏ Aɢᴀɪɴ** ━━━╯",
                     parse_mode=ParseMode.MARKDOWN,
-                    quote=True,
                 )
+                processing = None
                 return
 
             await asyncio.gather(
@@ -248,22 +263,29 @@ def register_visit_handler(
             used = await asyncio.to_thread(
                 lambda: collection.find_one({"kind": "user", "key": user_key, "day": day}, {"successful": 1}).get("successful", 0)
             )
-            await _delete_processing(processing)
-            processing = None
-            await message.reply_text(
+            await _respond(
+                message,
+                processing,
                 _format_success(payload, region, int(used)),
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=developer_keyboard(),
-                quote=True,
             )
+            processing = None
         except PyMongoError:
             logger.exception("Visit database operation failed")
-            await _delete_processing(processing)
-            await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", parse_mode=ParseMode.MARKDOWN, quote=True)
+            await _respond(
+                message,
+                processing,
+                "⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**",
+                parse_mode=ParseMode.MARKDOWN,
+            )
         except Exception:
             logger.exception("Visit command failed")
-            await _delete_processing(processing)
-            await message.reply_text("⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**", quote=True)
+            await _respond(
+                message,
+                processing,
+                "⚠️ **Vɪsɪᴛ Rᴇǫᴜᴇsᴛ Cᴏᴜʟᴅ Nᴏᴛ Bᴇ Cᴏᴍᴘʟᴇᴛᴇᴅ.**",
+            )
         finally:
             for reserved, kind, key in (
                 (user_reserved, "user", user_key if "user_key" in locals() else None),
