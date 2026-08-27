@@ -936,6 +936,18 @@ def as_number(value: Any) -> int | None:
     return int(match.group()) if match else None
 
 
+def player_name_available(value: Any) -> bool:
+    return str(value).strip().lower() not in {
+        "",
+        "n/a",
+        "na",
+        "not available",
+        "unknown",
+        "null",
+        "none",
+    }
+
+
 def payload_text(payload: Any) -> str:
     if isinstance(payload, str):
         return payload
@@ -982,7 +994,7 @@ def normalize_api_response(
     )
     nickname = find_value(
         data,
-        {"nickname", "playername", "playernickname", "name", "username"},
+        {"nickname", "nick", "player", "playername", "playernickname", "name", "username"},
     )
     uid = find_value(data, {"uid", "playeruid", "playerid", "userid", "accountid"})
     region = find_value(data, {"region", "servername", "server", "country"})
@@ -1454,9 +1466,21 @@ def combine_api_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     combined["given"] = sum(int(result.get("given") or 0) for result in successful)
     if successful:
         for field in ("nickname", "uid", "region", "level", "before", "after"):
-            if not combined.get(field):
+            if (
+                not combined.get(field)
+                or field == "nickname"
+                and not player_name_available(combined.get(field))
+            ):
                 combined[field] = next(
-                    (result.get(field) for result in successful if result.get(field)),
+                    (
+                        result.get(field)
+                        for result in successful
+                        if result.get(field)
+                        and (
+                            field != "nickname"
+                            or player_name_available(result.get(field))
+                        )
+                    ),
                     None,
                 )
         combined["success"] = True
@@ -1859,21 +1883,11 @@ async def process_autolike_uid(record: dict[str, Any], api_config: dict[str, Any
             logger.warning("UID FAILED OR ALREADY PROCESSED: %s", uid)
             return
 
-        # Prefer player details returned by the Like APIs. Only call the
-        # player-info APIs when those details are missing from the Like data.
-        like_details = next(
-            (
-                result for result in safe_results
-                if any(
-                    result.get(field) not in (None, "")
-                    for field in ("nickname", "level", "before")
-                )
-            ),
-            {},
-        )
-        player_name = like_details.get("nickname")
-        level = like_details.get("level")
-        before_value = like_details.get("before")
+        # Use the merged Like API details so a later API can supply fields
+        # missing from the first successful response.
+        player_name = combined.get("nickname")
+        level = combined.get("level")
+        before_value = combined.get("before")
         if player_name in (None, "") or level in (None, "") or before_value in (None, ""):
             payloads = await fetch_vip_player_payloads(uid)
             player_name = player_name or vip_player_value(
