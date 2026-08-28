@@ -807,7 +807,7 @@ def command_arguments(message: Message) -> list[str]:
     return parts[1:] if parts else []
 
 
-DISABLEABLE_COMMANDS = {"like"}
+DISABLEABLE_COMMANDS = {"like", "visit", "bancheck"}
 
 
 def group_member_is_admin(member: Any) -> bool:
@@ -3093,6 +3093,8 @@ async def bancheck_command(_: Client, message: Message) -> None:
             return
         status_print("COMMAND RECEIVED: /bancheck")
         if not await command_access_allowed(message):
+            return
+        if await is_command_disabled(message, "bancheck"):
             return
         arguments = command_arguments(message)
         if len(arguments) != 1 or not UID_PATTERN.fullmatch(arguments[0]):
