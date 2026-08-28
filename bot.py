@@ -3209,10 +3209,6 @@ async def get_uid_command(_: Client, message: Message) -> None:
             fallback_warnings.append(
                 "⚠️ Primary and fallback player-info APIs are unavailable."
             )
-        elif fallback_payload is None:
-            fallback_warnings.append(
-                "⚠️ Fallback player-info API unavailable — primary API data used."
-            )
         payloads = [payload for payload in (primary_payload, fallback_payload) if payload is not None]
         valid_payloads = [payload for payload in payloads if payload is not None]
 
