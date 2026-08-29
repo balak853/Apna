@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import html
 import logging
 import re
@@ -304,6 +303,40 @@ def developer_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+async def fetch_level_basic_info(
+    *,
+    uid: str,
+    fetch_player_info: Callable[[str], Awaitable[Any | None]],
+    player_info_api_url: str,
+    secondary_player_info_api_url: str,
+    logger: logging.Logger,
+) -> dict[str, Any] | None:
+    """Try the fallback source first, then use the primary source if needed."""
+    sources = (
+        ("Fallback", secondary_player_info_api_url),
+        ("Primary", player_info_api_url),
+    )
+    for source_name, api_url in sources:
+        try:
+            payload = await fetch_player_info(api_url.format(uid=uid))
+        except Exception as error:
+            logger.warning(
+                "Level %s player-info source failed: %s",
+                source_name,
+                type(error).__name__,
+            )
+            continue
+
+        basic_info = resolve_basic_info([payload])
+        if basic_info is not None:
+            return basic_info
+        logger.warning(
+            "Level %s player-info source returned no usable basic_info",
+            source_name,
+        )
+    return None
+
+
 def register_level_info_handler(
     *,
     bot: Client,
@@ -350,19 +383,13 @@ def register_level_info_handler(
                 "⏳ Lᴇᴠᴇʟ Iɴғᴏʀᴍᴀᴛɪᴏɴ Lᴏᴀᴅɪɴɢ...",
                 quote=True,
             )
-            fetched = await asyncio.gather(
-                fetch_player_info(player_info_api_url.format(uid=uid)),
-                fetch_player_info(secondary_player_info_api_url.format(uid=uid)),
-                return_exceptions=True,
+            basic_info = await fetch_level_basic_info(
+                uid=uid,
+                fetch_player_info=fetch_player_info,
+                player_info_api_url=player_info_api_url,
+                secondary_player_info_api_url=secondary_player_info_api_url,
+                logger=logger,
             )
-            payloads = []
-            for item in fetched:
-                if isinstance(item, Exception):
-                    logger.warning("Level player-info source failed: %s", type(item).__name__)
-                elif item is not None:
-                    payloads.append(item)
-
-            basic_info = resolve_basic_info(payloads)
             if basic_info is None:
                 await _reply_api_unavailable(message, processing)
                 processing = None
