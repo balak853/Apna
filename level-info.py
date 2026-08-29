@@ -151,12 +151,15 @@ def _has_value(value: Any) -> bool:
 def _basic_info(payload: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
-    basic_info = payload.get("basic_info")
-    return basic_info if isinstance(basic_info, dict) else None
+    for field_name in ("basicInfo", "basic_info"):
+        basic_info = payload.get(field_name)
+        if isinstance(basic_info, dict):
+            return basic_info
+    return None
 
 
 def resolve_basic_info(payloads: list[Any]) -> dict[str, Any] | None:
-    """Merge only the documented basic_info fields from valid API payloads."""
+    """Read documented fields from either API's basicInfo naming style."""
     fields = ("account_id", "nickname", "region", "level", "exp", "liked")
     resolved: dict[str, Any] = {}
     for payload in payloads:
