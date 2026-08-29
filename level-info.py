@@ -131,6 +131,15 @@ API_UNAVAILABLE_MESSAGE = (
     "<b>⚠️ Pʟᴀʏᴇʀ Iɴғᴏ Uɴᴀᴠᴀɪʟᴀʙʟᴇ</b>\n\n"
     "Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Sʜᴏʀᴛʟʏ."
 )
+REGION_REQUIRED_MESSAGE = (
+    "<b>⚠️ Rᴇɢɪᴏɴ Rᴇǫᴜɪʀᴇᴅ</b>\n\n"
+    "Pʟᴇᴀsᴇ Pʀᴏᴠɪᴅᴇ Tʜᴇ Pʟᴀʏᴇʀ Rᴇɢɪᴏɴ.\n"
+    "Uѕᴇ: <code>/Level UID REGION</code>\n"
+    "E.xᴀᴍᴘʟᴇ: <code>/Level 1589573783 ind</code>"
+)
+LEVEL_PLAYER_INFO_API_URL = (
+    "https://vertex-x-ff.vercel.app/get?uid={uid}&region={region}"
+)
 
 
 def _integer_value(value: Any) -> int | None:
@@ -151,7 +160,13 @@ def _has_value(value: Any) -> bool:
 def _basic_info(payload: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
-    for field_name in ("basicInfo", "basic_info"):
+    for field_name in (
+        "captainBasicInfo",
+        "basicInfo",
+        "basic_info",
+        "AccountInfo",
+        "accountInfo",
+    ):
         basic_info = payload.get(field_name)
         if isinstance(basic_info, dict):
             return basic_info
@@ -159,16 +174,28 @@ def _basic_info(payload: Any) -> dict[str, Any] | None:
 
 
 def resolve_basic_info(payloads: list[Any]) -> dict[str, Any] | None:
-    """Read documented fields from either API's basicInfo naming style."""
-    fields = ("account_id", "nickname", "region", "level", "exp", "liked")
+    """Read the Level API's player fields without combining API responses."""
+    field_aliases = {
+        "account_id": ("account_id", "accountId", "uid", "playerId"),
+        "nickname": ("nickname", "accountName", "name"),
+        "region": ("region", "accountRegion"),
+        "level": ("level", "accountLevel"),
+        "exp": ("exp", "accountEXP", "accountExp", "experience"),
+        "liked": ("liked", "accountLikes", "likes"),
+    }
     resolved: dict[str, Any] = {}
     for payload in payloads:
         basic_info = _basic_info(payload)
         if basic_info is None:
             continue
-        for field in fields:
-            if field not in resolved and _has_value(basic_info.get(field)):
-                resolved[field] = basic_info[field]
+        for output_field, aliases in field_aliases.items():
+            if output_field in resolved:
+                continue
+            for alias in aliases:
+                value = basic_info.get(alias)
+                if _has_value(value):
+                    resolved[output_field] = value
+                    break
     return resolved or None
 
 
@@ -309,48 +336,33 @@ def developer_keyboard() -> InlineKeyboardMarkup:
 async def fetch_level_basic_info(
     *,
     uid: str,
+    region: str,
     fetch_player_info: Callable[[str], Awaitable[Any | None]],
-    player_info_api_url: str,
-    secondary_player_info_api_url: str,
     logger: logging.Logger,
 ) -> dict[str, Any] | None:
-    """Try the fallback source first, then use the primary source if needed."""
-    sources = (
-        ("Fallback", secondary_player_info_api_url),
-        ("Primary", player_info_api_url),
-    )
-    for source_name, api_url in sources:
-        try:
-            payload = await fetch_player_info(api_url.format(uid=uid))
-        except Exception as error:
-            logger.warning(
-                "Level %s player-info source failed: %s",
-                source_name,
-                type(error).__name__,
-            )
-            continue
+    """Fetch /Level data only from the configured Vertex-X endpoint."""
+    api_url = LEVEL_PLAYER_INFO_API_URL.format(uid=uid, region=region)
+    try:
+        payload = await fetch_player_info(api_url)
+    except Exception as error:
+        logger.warning("Level player-info source failed: %s", type(error).__name__)
+        return None
 
-        basic_info = resolve_basic_info([payload])
-        if basic_info is not None:
-            return basic_info
-        logger.warning(
-            "Level %s player-info source returned no usable basic_info",
-            source_name,
-        )
-    return None
+    basic_info = resolve_basic_info([payload])
+    if basic_info is None:
+        logger.warning("Level player-info source returned no usable basic_info")
+    return basic_info
 
 
 def register_level_info_handler(
     *,
     bot: Client,
     fetch_player_info: Callable[[str], Awaitable[Any | None]],
-    player_info_api_url: str,
-    secondary_player_info_api_url: str,
     require_bot_group_admin: Callable[[Message], Awaitable[bool]],
     command_access_allowed: Callable[[Message], Awaitable[bool]],
     logger: logging.Logger,
 ) -> None:
-    """Register Level/level handlers using the bot's existing player-info fetcher."""
+    """Register Level/level using only the Vertex-X player-info endpoint."""
 
     @bot.on_message(filters.incoming & ~filters.service & filters.regex(LEVEL_MESSAGE_PATTERN))
     async def level_info_command(_: Client, message: Message) -> None:
@@ -365,7 +377,7 @@ def register_level_info_handler(
             parts = raw_text.split()
             command = parts[0] if parts else ""
             command = command[1:] if command.startswith("/") else command
-            if len(parts) != 2 or command.lower() != "level" or not UID_PATTERN.fullmatch(parts[1]):
+            if command.lower() != "level" or len(parts) not in {2, 3}:
                 await message.reply_text(
                     INVALID_UID_MESSAGE,
                     parse_mode=ParseMode.HTML,
@@ -373,10 +385,37 @@ def register_level_info_handler(
                 )
                 return
 
-            uid = parts[1]
+            if len(parts) == 2:
+                uid = parts[1]
+                region = None
+            elif UID_PATTERN.fullmatch(parts[1]):
+                uid = parts[1]
+                region = parts[2].lower()
+            elif UID_PATTERN.fullmatch(parts[2]):
+                region = parts[1].lower()
+                uid = parts[2]
+            else:
+                uid = parts[1]
+                region = parts[2].lower()
+
+            if not UID_PATTERN.fullmatch(uid):
+                await message.reply_text(
+                    INVALID_UID_MESSAGE,
+                    parse_mode=ParseMode.HTML,
+                    quote=True,
+                )
+                return
             if int(uid) <= 0:
                 await message.reply_text(
                     INVALID_UID_MESSAGE,
+                    parse_mode=ParseMode.HTML,
+                    quote=True,
+                )
+                return
+
+            if region is None or not re.fullmatch(r"[A-Za-z0-9_-]+", region):
+                await message.reply_text(
+                    REGION_REQUIRED_MESSAGE,
                     parse_mode=ParseMode.HTML,
                     quote=True,
                 )
@@ -388,9 +427,8 @@ def register_level_info_handler(
             )
             basic_info = await fetch_level_basic_info(
                 uid=uid,
+                region=region,
                 fetch_player_info=fetch_player_info,
-                player_info_api_url=player_info_api_url,
-                secondary_player_info_api_url=secondary_player_info_api_url,
                 logger=logger,
             )
             if basic_info is None:
