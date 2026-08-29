@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import importlib.util
 import io
 import json
 import logging
@@ -2758,6 +2759,24 @@ register_visit_handler(
     command_access_allowed=command_access_allowed,
     is_command_disabled=is_command_disabled,
     ist_now=ist_now,
+    logger=logger,
+)
+
+level_info_spec = importlib.util.spec_from_file_location(
+    "level_info",
+    BASE_DIR / "level-info.py",
+)
+if level_info_spec is None or level_info_spec.loader is None:
+    raise ImportError("Could not load level-info.py")
+level_info_module = importlib.util.module_from_spec(level_info_spec)
+level_info_spec.loader.exec_module(level_info_module)
+level_info_module.register_level_info_handler(
+    bot=bot,
+    fetch_player_info=fetch_player_info,
+    player_info_api_url=PLAYER_INFO_API_URL,
+    secondary_player_info_api_url=SECONDARY_PLAYER_INFO_API_URL,
+    require_bot_group_admin=require_bot_group_admin,
+    command_access_allowed=command_access_allowed,
     logger=logger,
 )
 
