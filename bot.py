@@ -2090,6 +2090,10 @@ SECONDARY_BANNER_API_URL = (
 OUTFIT_API_URL = (
     "https://image.strikerxyash.online/outfit-image"
 )
+LEGACY_OUTFIT_API_URL = (
+    "https://vertex-x-outfit.vercel.app/outfit-image"
+    "?uid={uid}&key=VERTEX"
+)
 
 
 def profile_value(payloads: list[Any], aliases: set[str]) -> Any:
@@ -2747,6 +2751,10 @@ async def send_profile_media(
 
     outfit_url = dynamic_outfit_api_url(payloads)
     outfit = await fetch_image_bytes(outfit_url) if outfit_url is not None else None
+    if outfit is None:
+        legacy_outfit_url = LEGACY_OUTFIT_API_URL.format(uid=uid)
+        logger.info("New outfit image API failed, using legacy outfit API")
+        outfit = await fetch_image_bytes(legacy_outfit_url)
     if outfit is not None:
         outfit_file = None
         try:
