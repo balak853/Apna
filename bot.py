@@ -97,7 +97,10 @@ API_CATALOG: list[dict[str, str]] = [
     {
         "name": "OUTFIT IMAGE API",
         "category": "OUTFIT IMAGE",
-        "url": "https://vertex-x-outfit.vercel.app/outfit-image?uid={UID}&key=VERTEX",
+        "url": (
+            "https://image.strikerxyash.online/outfit-image"
+            "?avatar_id={AVATAR_ID}&clothes={CLOTHES}"
+        ),
     },
     {
         "name": "SECONDARY PLAYER INFO API",
@@ -2085,7 +2088,7 @@ SECONDARY_BANNER_API_URL = (
     "&guild={guild}&pinId={pinId}&celebrity={celebrity}&frame={frame}"
 )
 OUTFIT_API_URL = (
-    "https://vertex-x-outfit.vercel.app/outfit-image?uid={uid}&key=VERTEX"
+    "https://image.strikerxyash.online/outfit-image"
 )
 
 
@@ -2109,6 +2112,47 @@ def profile_text(value: Any) -> str:
 
 def html_profile_text(value: Any) -> str:
     return html.escape(profile_text(value), quote=True)
+
+
+def numeric_item_ids(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        values = [value]
+
+    item_ids: list[str] = []
+    for item in values:
+        if isinstance(item, bool) or item in (None, ""):
+            continue
+        item_id = str(item).strip()
+        if not re.fullmatch(r"[0-9]+", item_id):
+            continue
+        if item_id not in item_ids:
+            item_ids.append(item_id)
+    return item_ids
+
+
+def dynamic_outfit_api_url(payloads: list[Any]) -> str | None:
+    avatar_id = profile_value(payloads, {"avatarid", "accountavatarid"})
+    avatar_ids = numeric_item_ids(avatar_id)
+    clothes = numeric_item_ids(
+        profile_value(payloads, {"clothes", "equippedoutfit", "outfit"})
+    )
+    weapons = numeric_item_ids(
+        profile_value(payloads, {"weaponskinshows", "equippedweapon", "weaponskins"})
+    )
+    all_items = clothes + [item for item in weapons if item not in clothes]
+    if not avatar_ids or not all_items:
+        return None
+
+    query = urlencode(
+        {
+            "avatar_id": avatar_ids[0],
+            "clothes": ",".join(all_items),
+        },
+        safe=",",
+    )
+    return f"{OUTFIT_API_URL}?{query}"
 
 
 def profile_response_is_valid(status_code: int, payload: Any) -> bool:
@@ -2701,7 +2745,8 @@ async def send_profile_media(
         if not banner_sent:
             return ["⚠️ Bᴀɴɴᴇʀ Gᴇɴᴇʀᴀᴛɪᴏɴ Fᴀɪʟᴇᴅ"]
 
-    outfit = await fetch_image_bytes(OUTFIT_API_URL.format(uid=uid))
+    outfit_url = dynamic_outfit_api_url(payloads)
+    outfit = await fetch_image_bytes(outfit_url) if outfit_url is not None else None
     if outfit is not None:
         outfit_file = None
         try:
