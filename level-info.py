@@ -140,6 +140,17 @@ REGION_REQUIRED_MESSAGE = (
 LEVEL_PLAYER_INFO_API_URL = (
     "https://vertex-x-ff.vercel.app/get?uid={uid}&region={region}"
 )
+LEVEL_PLAYER_INFO_API_URLS: tuple[tuple[str, str], ...] = (
+    ("Vertex-X", LEVEL_PLAYER_INFO_API_URL),
+    (
+        "Primary Player Info",
+        "https://player-info-ob54.vercel.app/player-info?uid={uid}",
+    ),
+    (
+        "Secondary Player Info",
+        "https://star-info-api.lovable.app/functions/v1/info-api/accinfo?uid={uid}",
+    ),
+)
 
 
 def _integer_value(value: Any) -> int | None:
@@ -147,6 +158,8 @@ def _integer_value(value: Any) -> int | None:
         return None
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
     text = str(value).strip().replace(",", "")
     if not re.fullmatch(r"[0-9]+", text):
         return None
@@ -170,18 +183,78 @@ def _basic_info(payload: Any) -> dict[str, Any] | None:
         basic_info = payload.get(field_name)
         if isinstance(basic_info, dict):
             return basic_info
+    for field_name in ("playerInfo", "player_info", "data", "result", "info"):
+        nested = payload.get(field_name)
+        if isinstance(nested, dict):
+            basic_info = _basic_info(nested)
+            if basic_info is not None:
+                return basic_info
+    direct_fields = {
+        "account_id",
+        "accountid",
+        "uid",
+        "playerid",
+        "nickname",
+        "accountname",
+        "account_name",
+        "region",
+        "accountregion",
+        "account_region",
+        "level",
+        "accountlevel",
+        "account_level",
+        "exp",
+        "accountexp",
+        "account_exp",
+        "experience",
+        "liked",
+        "accountlikes",
+        "account_likes",
+        "likes",
+    }
+    if any(
+        re.sub(r"[^a-z0-9]", "", str(key).lower()) in direct_fields
+        for key in payload
+    ):
+        return payload
     return None
 
 
 def resolve_basic_info(payloads: list[Any]) -> dict[str, Any] | None:
     """Read the Level API's player fields without combining API responses."""
     field_aliases = {
-        "account_id": ("account_id", "accountId", "uid", "playerId"),
-        "nickname": ("nickname", "accountName", "name"),
-        "region": ("region", "accountRegion"),
-        "level": ("level", "accountLevel"),
-        "exp": ("exp", "accountEXP", "accountExp", "experience"),
-        "liked": ("liked", "accountLikes", "likes"),
+        "account_id": (
+            "account_id",
+            "accountId",
+            "uid",
+            "playerId",
+            "player_uid",
+            "player_id",
+        ),
+        "nickname": (
+            "nickname",
+            "accountName",
+            "account_name",
+            "name",
+            "player_name",
+        ),
+        "region": ("region", "accountRegion", "account_region"),
+        "level": ("level", "accountLevel", "account_level", "player_level"),
+        "exp": (
+            "exp",
+            "accountEXP",
+            "accountExp",
+            "account_exp",
+            "experience",
+            "player_exp",
+        ),
+        "liked": (
+            "liked",
+            "accountLikes",
+            "account_likes",
+            "likes",
+            "like_count",
+        ),
     }
     resolved: dict[str, Any] = {}
     for payload in payloads:
@@ -213,33 +286,61 @@ def calculate_level_progress(
         "exp_needed": None,
         "level_100_exp": None,
         "remaining_exp": None,
+        "remaining_total": None,
         "progress_percent": None,
     }
     if level is None or exp is None or not 1 <= level <= 100 or exp < 0:
         return invalid
 
-    current_threshold = table.get(level)
-    total_threshold = table.get(100)
-    if current_threshold is None or total_threshold is None:
+    current_threshold = _integer_value(table.get(level))
+    total_threshold = _integer_value(table.get(100))
+    if (
+        current_threshold is None
+        or total_threshold is None
+        or current_threshold < 0
+        or total_threshold < current_threshold
+    ):
         return invalid
 
     next_level = level + 1 if level < 100 else None
-    next_threshold = table.get(next_level) if next_level is not None else None
-    if exp < current_threshold:
-        return invalid
-    if next_level is not None and next_threshold is None:
-        return invalid
-    if next_threshold is not None and exp >= next_threshold:
-        return invalid
-    if level == 100 and exp < total_threshold:
+    if level == 100:
+        if exp < total_threshold:
+            return invalid
+        return {
+            "next_level": None,
+            "exp_needed": 0,
+            "level_100_exp": total_threshold,
+            "remaining_exp": 0,
+            "remaining_total": 0,
+            "progress_percent": 100.0,
+        }
+
+    next_threshold = (
+        _integer_value(table.get(next_level))
+        if next_level is not None
+        else None
+    )
+    if (
+        exp < current_threshold
+        or next_threshold is None
+        or next_threshold <= current_threshold
+        or total_threshold < next_threshold
+        or exp >= next_threshold
+    ):
         return invalid
 
+    level_exp_range = next_threshold - current_threshold
+    level_progress_exp = exp - current_threshold
     return {
         "next_level": next_level,
         "exp_needed": max(0, next_threshold - exp) if next_threshold is not None else None,
         "level_100_exp": total_threshold,
-        "remaining_exp": max(0, total_threshold - exp),
-        "progress_percent": min(100.0, max(0.0, exp / total_threshold * 100)),
+        "remaining_exp": max(0, next_threshold - exp),
+        "remaining_total": max(0, total_threshold - exp),
+        "progress_percent": min(
+            100.0,
+            max(0.0, level_progress_exp / level_exp_range * 100),
+        ),
     }
 
 
@@ -259,9 +360,9 @@ def _level_text(value: Any) -> str:
     return str(number) if number is not None else NOT_AVAILABLE
 
 
-def _progress_bar(progress: float | None, segments: int = 10) -> str:
+def _progress_bar(progress: float | None, segments: int = 6) -> str:
     if progress is None:
-        return "░" * segments
+        return "▱" * segments
     filled = min(segments, max(0, round(progress / 100 * segments)))
     if progress > 0 and filled == 0:
         filled = 1
@@ -283,26 +384,18 @@ def build_level_info_output(
     # requested_uid is intentionally not used as a fallback for account_id:
     # the displayed UID must come from basic_info.account_id as requested.
     return (
-        "<b>╭━━━ 📊 Lᴇᴠᴇʟ Iɴғᴏʀᴍᴀᴛɪᴏɴ ━━━╮</b>\n"
-        "<b>│</b>\n"
-        "<b>│ ᴘʟᴀʏᴇʀ ᴘʀᴏғɪʟᴇ</b>\n"
-        "<b>╰────────────────────╯</b>\n\n"
-        "<blockquote>"
-        f"🆔 <b>UID</b>  <code>{_escaped(basic_info.get('account_id'))}</code>\n"
-        f"👤 <b>Nᴀᴍᴇ</b>  <code>{_escaped(basic_info.get('nickname'))}</code>\n"
-        f"🌍 <b>Rᴇɢɪᴏɴ</b>  <code>{_escaped(basic_info.get('region'))}</code>\n"
-        f"⭐ <b>Lᴇᴠᴇʟ</b>  <code>{_level_text(level)}</code>\n\n"
-        "<b>✨ EXP Jᴏᴜʀɴᴇʏ</b>\n"
-        f"✨ Cᴜʀʀᴇɴᴛ EXP  <code>{_number_text(exp)}</code>\n"
-        f"📈 Nᴇxᴛ Lᴇᴠᴇʟ  <code>{calculations['next_level'] or NOT_AVAILABLE}</code>\n"
-        f"🎯 EXP Nᴇᴇᴅᴇᴅ  <code>{_number_text(calculations['exp_needed'])}</code>\n\n"
-        f"🏆 Tᴏ Lᴇᴠᴇʟ 100  <code>{progress_text}</code>\n"
-        f"<code>{progress_bar}</code>\n"
-        f"🚀 Rᴇᴍᴀɪɴɪɴɢ EXP  <code>{_number_text(calculations['remaining_exp'])}</code>\n"
-        f"📦 Tᴏᴛᴀʟ Rᴇǫᴜɪʀᴇᴅ  <code>{_number_text(calculations['level_100_exp'])}</code>\n\n"
-        f"❤️ Lɪᴋᴇs  <code>{_number_text(basic_info.get('liked'))}</code>"
-        "</blockquote>\n"
-        "<i>⚡ Kᴇᴇᴘ Pʟᴀʏɪɴɢ • Kᴇᴇᴘ Lᴇᴠᴇʟɪɴɢ</i>"
+        "<blockquote>📊 <b>𝐋ᴇᴠᴇʟ Iɴғᴏʀᴍᴀᴛɪᴏɴ</b>\n\n"
+        f"👤 <b>𝐍ᴀᴍᴇ:</b> <b>{_escaped(basic_info.get('nickname'))}</b>\n"
+        f"🆔 <b>𝐔ɪᴅ:</b> <b>{_escaped(basic_info.get('account_id'))}</b>\n"
+        f"🌍 <b>𝐑ᴇɢɪᴏɴ:</b> <b>{_escaped(basic_info.get('region'))}</b>\n"
+        f"⭐ <b>𝐋ᴇᴠᴇʟ:</b> <b>{_level_text(level)}</b></blockquote>\n\n"
+        f"✨ <b>𝐂ᴜʀʀᴇɴᴛ EXP:</b> <b>{_number_text(exp)}</b>\n"
+        f"📈 <b>𝐍ᴇxᴛ Lᴇᴠᴇʟ:</b> <b>{calculations['next_level'] or NOT_AVAILABLE}</b>\n\n"
+        f"✦ {progress_bar} <b>{progress_text}</b>\n"
+        f"🎯 <b>{_number_text(calculations['remaining_exp'])} EXP ᴍᴏʀᴇ ᴛᴏ ʟᴇᴠᴇʟ ᴜᴘ</b>\n\n"
+        f"🚀 <b>𝐑ᴇᴍᴀɪɴɪɴɢ EXP:</b> <b>{_number_text(calculations['remaining_total'])}</b>\n"
+        f"❤️ <b>𝐋ɪᴋᴇs:</b> <b>{_number_text(basic_info.get('liked'))}</b>\n\n"
+        "⚡ <i>Kᴇᴇᴘ Pʟᴀʏɪɴɢ • Kᴇᴇᴘ Lᴇᴠᴇʟɪɴɢ</i>"
     )
 
 
@@ -340,18 +433,30 @@ async def fetch_level_basic_info(
     fetch_player_info: Callable[[str], Awaitable[Any | None]],
     logger: logging.Logger,
 ) -> dict[str, Any] | None:
-    """Fetch /Level data only from the configured Vertex-X endpoint."""
-    api_url = LEVEL_PLAYER_INFO_API_URL.format(uid=uid, region=region)
-    try:
-        payload = await fetch_player_info(api_url)
-    except Exception as error:
-        logger.warning("Level player-info source failed: %s", type(error).__name__)
-        return None
+    """Try each Level player-info source once, in priority order."""
+    required_fields = ("account_id", "nickname", "region", "level", "exp")
+    for source_name, url_template in LEVEL_PLAYER_INFO_API_URLS:
+        api_url = url_template.format(uid=uid, region=region)
+        try:
+            payload = await fetch_player_info(api_url)
+        except Exception as error:
+            logger.warning(
+                "Level %s source failed: %s",
+                source_name,
+                type(error).__name__,
+            )
+            continue
 
-    basic_info = resolve_basic_info([payload])
-    if basic_info is None:
-        logger.warning("Level player-info source returned no usable basic_info")
-    return basic_info
+        basic_info = resolve_basic_info([payload])
+        if basic_info is None or not all(
+            _has_value(basic_info.get(field)) for field in required_fields
+        ):
+            logger.warning("Level %s source returned unusable player data", source_name)
+            continue
+        return basic_info
+
+    logger.warning("All Level player-info sources failed or returned unusable data")
+    return None
 
 
 def register_level_info_handler(
