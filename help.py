@@ -36,6 +36,62 @@ VIP_COMMAND = (
     "Aᴅᴍɪɴ-ᴏɴʟʏ ᴘʀᴇᴍɪᴜᴍ ᴀᴜᴛᴏʟɪᴋᴇ ʀᴇǫᴜᴇsᴛ.",
 )
 
+ADMIN_COMMANDS = (
+    (
+        "/onverify",
+        "Eɴᴀʙʟᴇs ғᴏʀᴄᴇ-ᴊᴏɪɴ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ.",
+    ),
+    (
+        "/offverify",
+        "Dɪsᴀʙʟᴇs ғᴏʀᴄᴇ-ᴊᴏɪɴ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ.",
+    ),
+    (
+        "/addforce {Cʜᴀᴛ_ɪᴅ}",
+        "Aᴅᴅs ᴀ ᴄʜᴀɴɴᴇʟ, ɢʀᴏᴜᴘ ᴏʀ sᴜᴘᴇʀɢʀᴏᴜᴘ ғᴏʀ ғᴏʀᴄᴇ-ᴊᴏɪɴ.",
+    ),
+    (
+        "/disable {Cᴏᴍᴍᴀɴᴅ_Nᴀᴍᴇ}",
+        "Dɪsᴀʙʟᴇs /like, /visit ᴏʀ /bancheck ғᴏʀ ᴛʜᴇ ɢʀᴏᴜᴘ.",
+    ),
+    (
+        "/active {Cᴏᴍᴍᴀɴᴅ_Nᴀᴍᴇ}",
+        "Rᴇ-ᴀᴄᴛɪᴠᴀᴛᴇs ᴀ ᴅɪsᴀʙʟᴇᴅ /like, /visit ᴏʀ /bancheck.",
+    ),
+    (
+        "/users",
+        "Eхᴘᴏʀᴛs ᴛʜᴇ ʙᴏᴛ's ᴜsᴇʀ ᴅᴀᴛᴀʙᴀsᴇ.",
+    ),
+    (
+        "/setapi {Mᴏᴅᴇ}",
+        "Sᴇᴛs 1, 2, 3, all, custom_api N ᴏʀ custom_api_N ᴀs ᴛʜᴇ ʟɪᴋᴇ ᴍᴏᴅᴇ.",
+    ),
+    (
+        "/addlikeapi {Hᴛᴛᴘ_Aᴘɪ_URL}",
+        "Aᴅᴅs ᴀ ᴠᴀʟɪᴅ HTTP/HTTPS ʟɪᴋᴇ API ᴛᴏ ᴛʜᴇ ʀᴏᴜᴛɪɴɢ ʟɪsᴛ.",
+    ),
+    (
+        "/likeapis | /listlikeapis",
+        "Sʜᴏᴡs ᴛʜᴇ ᴄᴏɴғɪɢᴜʀᴇᴅ ʟɪᴋᴇ API ʟɪsᴛ.",
+    ),
+    (
+        "/removealllikeapis | /removeallapi",
+        "Oᴘᴇɴs ᴛʜᴇ ᴄᴏɴғɪʀᴍᴀᴛɪᴏɴ ᴛᴏ ʀᴇᴍᴏᴠᴇ ᴀʟʟ ʟɪᴋᴇ APIs.",
+    ),
+    (
+        "/removelikeapi {Nᴜᴍʙᴇʀ} | /removeapi {Nᴜᴍʙᴇʀ}",
+        "Oᴘᴇɴs ᴛʜᴇ ᴄᴏɴғɪʀᴍᴀᴛɪᴏɴ ᴛᴏ ʀᴇᴍᴏᴠᴇ ʟɪᴋᴇ API 1, 2 ᴏʀ 3.",
+    ),
+    (
+        "/runnow",
+        "Sᴛᴀʀᴛs ᴛʜᴇ ᴀᴅᴍɪɴ ᴀᴜᴛᴏʟɪᴋᴇ ʀᴜɴ ɪᴍᴍᴇᴅɪᴀᴛᴇʟʏ.",
+    ),
+    VIP_COMMAND,
+    (
+        "/addvip {Rᴇɢɪᴏɴ} {Uɪᴅ} {Tᴏᴛᴀʟ_Dᴀʏs}",
+        "Aᴅᴅs ᴀɴ ᴀᴅᴍɪɴ-ᴏɴʟʏ VIP ᴀᴜᴛᴏʟɪᴋᴇ ʀᴇᴄᴏʀᴅ.",
+    ),
+)
+
 
 def _command_line(command: str, description: str | None = None) -> str:
     if description is None:
@@ -54,9 +110,11 @@ def build_command_menu(include_vip: bool = False) -> str:
         lines.extend(
             [
                 "│",
-                f"│ 🔐 {_command_line(VIP_COMMAND[0])}",
+                "│ 🔐 <b>Aᴅᴍɪɴ Cᴏᴍᴍᴀɴᴅs</b>",
             ]
         )
+        for command, _ in ADMIN_COMMANDS:
+            lines.append(f"│ {_command_line(command)}")
     lines.extend(
         [
             "│",
@@ -95,12 +153,18 @@ def build_detailed_help(include_vip: bool = False) -> str:
         lines.extend(
             [
                 "│",
-                "│ 🔐 <b>Aᴅᴍɪɴ Pʀᴇᴍɪᴜᴍ</b>",
+                "│ 🔐 <b>Aᴅᴍɪɴ Cᴏᴍᴍᴀɴᴅs</b>",
                 "│",
-                f"│ {_command_line(VIP_COMMAND[0])}",
-                f"│ <i>{VIP_COMMAND[1]}</i>",
             ]
         )
+        for command, description in ADMIN_COMMANDS:
+            lines.extend(
+                [
+                    f"│ {_command_line(command)}",
+                    f"│ <i>{description}</i>",
+                    "│",
+                ]
+            )
     lines.extend(
         [
             "│",
