@@ -3360,26 +3360,35 @@ async def start_command(_: Client, message: Message) -> None:
                 quote=True,
             )
             return
+        full_name = getattr(message.from_user, "full_name", None) or "Fʀɪᴇɴᴅ"
+        full_name = html.escape(str(full_name), quote=False)
         keyboard = InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        "➕ ADD ME",
+                        "✨ Aᴅᴅ Mᴇ Tᴏ Yᴏᴜʀ Gʀᴏᴜᴘ",
                         url=f"https://t.me/{username}?startgroup=true",
                     )
-                ]
+                ],
+                [
+                    InlineKeyboardButton("📞 Sᴜᴘᴘᴏʀᴛ", url="https://t.me/vtx_ff"),
+                    InlineKeyboardButton(
+                        "💖 Oᴡɴᴇʀ",
+                        url="https://t.me/BALAK_TRUSTED",
+                    ),
+                ],
             ]
         )
         await message.reply_text(
-            "✦ 𝗪ᴇʟᴄᴏᴍᴇ Tᴏ 𝐅ʀᴇᴇ Fɪʀᴇ Lɪᴋᴇ Bᴏᴛ ✦\n\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "👋 Hᴇʟʟᴏ, 𝗙ʀɪᴇɴᴅ!\n\n"
-            "Gᴇᴛ ʏᴏᴜʀ ᴘʟᴀʏᴇʀ ʟɪᴋᴇs ғᴀsᴛ ᴀɴᴅ sᴍᴏᴏᴛʜʟʏ.\n\n"
-            "▸ 𝐇ᴏᴡ Tᴏ Rᴇǫᴜᴇsᴛ Lɪᴋᴇs\n"
-            "Sᴇɴᴅ: 𝗞 /like ɪɴᴅ 1589573783\n\n"
-            "⚡ 𝗢ɴᴇ ʀᴇǫᴜᴇsᴛ ᴀ ᴅᴀʏ ғᴏʀ ғʀᴇᴇ ᴜsᴇʀs\n"
-            "━━━━━━━━━━━━━━━━━━",
+            f"🎉 WELCOME 『{full_name}』 🎉\n"
+            "━━━✦✦━━━\n"
+            "🔥 Rᴇᴀᴅʏ Tᴏ Fɪʀᴇ, Rᴇᴀᴅʏ Tᴏ Wɪɴ 🔥\n"
+            "😎 Eɴᴊᴏʏ Tʜᴇ Gᴀᴍᴇ Wɪᴛʜ Oᴜʀ BOT 🚀\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "<b>Cᴏᴍᴍᴀɴᴅ -</b>\n\n"
+            "<code>/like {Rᴇɢɪᴏɴ} {Uɪᴅ}</code>",
             reply_markup=keyboard,
+            parse_mode=ParseMode.HTML,
             quote=True,
         )
     except Exception:
