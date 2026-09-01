@@ -11,11 +11,23 @@ from pyrogram.types import Message
 
 BOT_STATUS_ID = "global"
 BOT_OFF_MESSAGE = (
-    "<b>⛔ Bᴏᴛ Cᴜʀʀᴇɴᴛʟʏ Oғғ</b>\n\n"
-    "Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ."
+    "<blockquote>╭━━━ <b>🛑 Bᴏᴛ Oғғʟɪɴᴇ</b> ━━━╮\n"
+    "│\n"
+    "│ ⚠️ <b>Sᴛᴀᴛᴜs:</b> Tᴇᴍᴘᴏʀᴀʀɪʟʏ Oғғ\n"
+    "│\n"
+    "│ Nᴏɴ-ᴀᴅᴍɪɴ Cᴏᴍᴍᴀɴᴅs ᴀʀᴇ\n"
+    "│ ᴄᴜʀʀᴇɴᴛʟʏ ᴅɪsᴀʙʟᴇᴅ.\n"
+    "│\n"
+    "│ 🔒 Pʟᴇᴀsᴇ Tʀʏ Aɢᴀɪɴ Lᴀᴛᴇʀ.\n"
+    "╰━━━━━━━━━━━━━━━━━━━━━━━╯</blockquote>"
 )
 BOT_USAGE_MESSAGE = (
-    "<b>Uѕᴀɢᴇ:</b> <code>/bot on</code> ᴏʀ <code>/bot off</code>"
+    "<blockquote>╭━━━ <b>⚙️ Bᴏᴛ Cᴏɴᴛʀᴏʟ</b> ━━━╮\n"
+    "│\n"
+    "│ Uѕᴀɢᴇ:\n"
+    "│ <code>/bot on</code>  •  Eɴᴀʙʟᴇ Bᴏᴛ\n"
+    "│ <code>/bot off</code> •  Dɪsᴀʙʟᴇ Bᴏᴛ\n"
+    "╰━━━━━━━━━━━━━━━━━━━━━━━╯</blockquote>"
 )
 
 
@@ -107,18 +119,29 @@ def register_system_handlers(
         enabled = parts[1].lower() == "on"
         try:
             await set_bot_enabled(enabled)
-            if enabled:
-                response = (
-                    "<b>✅ Bᴏᴛ Sᴛᴀᴛᴜs: Oɴ</b>\n\n"
-                    "Aʟʟ ᴄᴏᴍᴍᴀɴᴅs ᴀʀᴇ ᴀᴠᴀɪʟᴀʙʟᴇ ɴᴏᴡ."
-                )
-            else:
-                response = (
-                    "<b>🛑 Bᴏᴛ Sᴛᴀᴛᴜs: Oғғ</b>\n\n"
-                    "Nᴏɴ-ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅs ᴀʀᴇ ɴᴏᴡ ᴅɪsᴀʙʟᴇᴅ."
-                )
             await message.reply_text(
-                response,
+                (
+                    "<blockquote>╭━━━ <b>🛑 Bᴏᴛ Sʏsᴛᴇᴍ Oғғ</b> ━━━╮\n"
+                    "│\n"
+                    "│ 🔴 <b>Sᴛᴀᴛᴜs:</b> Oғғʟɪɴᴇ\n"
+                    "│\n"
+                    "│ Nᴏɴ-ᴀᴅᴍɪɴ Cᴏᴍᴍᴀɴᴅs ᴀʀᴇ\n"
+                    "│ ɴᴏᴡ ᴛᴇᴍᴘᴏʀᴀʀɪʟʏ ᴅɪsᴀʙʟᴇᴅ.\n"
+                    "│\n"
+                    "│ 🔐 Rᴇ-ᴇɴᴀʙʟᴇ: <code>/bot on</code>\n"
+                    "╰━━━━━━━━━━━━━━━━━━━━━━━╯</blockquote>"
+                    if not enabled
+                    else
+                    "<blockquote>╭━━━ <b>✅ Bᴏᴛ Sʏsᴛᴇᴍ Oɴ</b> ━━━╮\n"
+                    "│\n"
+                    "│ 🟢 <b>Sᴛᴀᴛᴜs:</b> Oɴʟɪɴᴇ\n"
+                    "│\n"
+                    "│ Aʟʟ Cᴏᴍᴍᴀɴᴅs ᴀʀᴇ\n"
+                    "│ ɴᴏᴡ ᴀᴠᴀɪʟᴀʙʟᴇ.\n"
+                    "│\n"
+                    "│ ⚡ Sʏsᴛᴇᴍ Rᴇᴀᴅʏ Tᴏ Sᴇʀᴠᴇ.\n"
+                    "╰━━━━━━━━━━━━━━━━━━━━━━━╯</blockquote>"
+                ),
                 parse_mode=ParseMode.HTML,
                 quote=True,
             )
