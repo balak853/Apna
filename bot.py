@@ -2805,6 +2805,7 @@ bot = Client(
 
 from visit import register_visit_handler
 from help import register_help_handlers
+from system import register_system_handlers
 
 register_visit_handler(
     bot=bot,
@@ -2820,6 +2821,13 @@ register_help_handlers(
     bot=bot,
     require_bot_group_admin=require_bot_group_admin,
     command_access_allowed=command_access_allowed,
+    is_configured_admin=is_configured_admin,
+    logger=logger,
+)
+
+register_system_handlers(
+    bot=bot,
+    database=database,
     is_configured_admin=is_configured_admin,
     logger=logger,
 )
